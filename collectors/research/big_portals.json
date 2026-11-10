@@ -1,0 +1,476 @@
+{
+  "_meta": {
+    "checked": "2026-11-07",
+    "client": "collectors.base (robots token RizqJobsBot, paced); no challenge bypass, no header spoofing",
+    "confirmed_existing": {
+      "Qiddiya (workable)": 255,
+      "ROSHN (oracle)": 4
+    },
+    "base_py_issue": "base.robots_allowed uses urllib.robotparser: (1) first match instead of RFC 9309 longest match, which wrongly disallows NEOM; (2) no '*' wildcard support, which wrongly ALLOWS Talentera's /*/job-search-results/. Recommend a longest-match parser with wildcards. Also: robots.txt on a host with no DNS or a TLS error shows up as 'Disallowed', not as a DNS/TLS error."
+  },
+  "entries": [
+    {
+      "name": "معادن",
+      "name_en": "Ma'aden",
+      "group": "company",
+      "enabled": true,
+      "ats": "jsonld",
+      "url": "https://careers.maaden.com/sitemap.xml",
+      "link_contains": "/job/",
+      "saudi_jobs_now": 27,
+      "_note": "Phenom site. sitemap.xml lists every open job; each job page carries JobPosting JSON-LD (Riyadh, Thuwal, ...). 27 fetches at 3 s."
+    },
+    {
+      "name": "عبد اللطيف جميل",
+      "name_en": "Abdul Latif Jameel",
+      "group": "company",
+      "enabled": true,
+      "ats": "sf_csb",
+      "url": "https://careers.alj.com",
+      "strict_location": true,
+      "saudi_jobs_now": 37,
+      "_note": "SuccessFactors CSB, server-rendered table. Global group, so strict_location; all 37 current rows are Saudi (Riyadh, SA ...)."
+    },
+    {
+      "name": "بترورابغ",
+      "name_en": "Petro Rabigh",
+      "group": "company",
+      "enabled": true,
+      "ats": "rss",
+      "url": "https://careers.petrorabigh.com/jobs.rss",
+      "saudi_jobs_now": 11,
+      "_note": "Teamtailor career site; official public jobs.rss. All posts are in Rabigh."
+    },
+    {
+      "name": "صيدليات الدواء",
+      "name_en": "Al-Dawaa Pharmacies",
+      "group": "company",
+      "enabled": true,
+      "ats": "rendered",
+      "url": "https://careers.al-dawaa.com/en/",
+      "link_contains": "/jobs/",
+      "saudi_jobs_now": 10,
+      "_note": "Talentera (Bayt). Home page lists featured jobs (/en/saudi-arabia/jobs/...). Do NOT use /job-search-results/: robots.txt disallows /*/job-search-results/ (a wildcard rule Python's robotparser does not apply)."
+    },
+    {
+      "name": "علم",
+      "name_en": "Elm",
+      "group": "company",
+      "enabled": true,
+      "ats": "sf_csb",
+      "url": "https://career.elm.sa",
+      "saudi_jobs_now": 7,
+      "_note": "SuccessFactors CSB on career.elm.sa (elm.sa itself fails TLS for Python and its robots blocks /careers)."
+    },
+    {
+      "name": "الخطوط السعودية",
+      "name_en": "Saudia Group",
+      "group": "company",
+      "enabled": true,
+      "ats": "html",
+      "url": "https://careers.saudia.com/search/?q=&locale=en_US&startrow=0",
+      "card": {
+        "tag": "li",
+        "cls": "job-tile"
+      },
+      "title": {
+        "tag": "a",
+        "cls": "jobTitle-link"
+      },
+      "location": {
+        "tag": "div",
+        "cls": "location"
+      },
+      "date": {
+        "tag": "div",
+        "cls": "date"
+      },
+      "saudi_jobs_now": 6,
+      "_note": "SuccessFactors CSB with the tile layout (the sf_csb adapter finds 0 because it expects tr.data-row). City/date text keep a 'Location '/'Date ' label prefix. Covers Saudia, Saudia Technic and cadet programs."
+    },
+    {
+      "name": "صدارة للكيميائيات",
+      "name_en": "Sadara Chemical",
+      "group": "company",
+      "enabled": true,
+      "ats": "sf_csb",
+      "url": "https://careers.sadara.com",
+      "saudi_only": false,
+      "saudi_jobs_now": 2,
+      "_note": "SuccessFactors CSB. Rows say 'SA, 11811', which is_saudi() does not match, so saudi_only:false (Sadara hires in Jubail only)."
+    }
+  ],
+  "needs_adapter": [
+    {
+      "name": "تابي",
+      "name_en": "tabby",
+      "platform": "Pinpoint (pinpointhq.com)",
+      "endpoint": "https://tabby.pinpointhq.com/postings.json",
+      "method": "GET",
+      "payload": null,
+      "fields": {
+        "list": "data[]",
+        "title": "data[].title",
+        "url": "data[].url",
+        "location": "data[].location.city + .province + .name (Saudi rows: name='KSA', province='Saudi Arabia', city='Riyadh')",
+        "date": "data[].published_at (null today); fall back to first-seen (deadline_at is the closing date)",
+        "extra": "employment_type_text, workplace_type_text, job.department.name, job.division.name"
+      },
+      "sample": [
+        "{\"data\":[{\"id\":\"196855\",\"title\":\"Customer Service Ambassador\",\"url\":\"https://tabby.pinpointhq.com/en/postings/53c2f99c-...\",",
+        "\"location\":{\"city\":\"Cairo\",\"province\":\"Egyt\",\"name\":\"Egypt\"},\"employment_type_text\":\"Full Time\",\"deadline_at\":\"2026-12-31T23:59:59+04:00\",\"published_at\":null,",
+        "\"job\":{\"department\":{\"name\":\"Customer Support Ops\"}}}, ...]}   (63 postings, 11 in Riyadh/KSA)"
+      ],
+      "status": "Verified live via base.fetch_json (robots allowed). One generic 'pinpoint' adapter with board='tabby' (host {board}.pinpointhq.com). Job pages also carry JSON-LD. Use strict_location: tabby hires across the GCC and remotely."
+    },
+    {
+      "name": "سابك / سبكيم / التصنيع",
+      "name_en": "SABIC, Sipchem, Tasnee (new SuccessFactors CSB UI)",
+      "platform": "SAP SuccessFactors Career Site Builder (JS results UI)",
+      "endpoint": "GET {root}/sitemap.xml  (roots: https://jobs.sabic.com, https://career.sipchem.com, https://jobs.tasnee.com)",
+      "method": "GET",
+      "payload": null,
+      "fields": {
+        "list": "<loc> entries containing /job/",
+        "title": "job page: element with itemprop=\"title\"",
+        "url": "the <loc> URL",
+        "location": "first slug segment (/job/Jubail-...) or itemprop jobLocation if present",
+        "date": "itemprop datePosted if present, else first-seen",
+        "description": "itemprop=\"description\""
+      },
+      "sample": [
+        "<urlset><url><loc>https://jobs.sabic.com/job/Jubail-Cooperative-Training-Program/857429023/</loc></url></urlset>",
+        "<span lang=\"en-US\" itemprop=\"title\">Cooperative Training Program</span>",
+        "(job page has no JSON-LD, so the existing jsonld adapter returns 0)"
+      ],
+      "status": "Their /search/ page loads results from /services/, which robots.txt disallows, so sf_csb returns 0. sitemap.xml is allowed. Today SABIC has 1 job, Sipchem 0, Tasnee 0: low volume now, but one 'sf_sitemap' adapter also fits other new-UI CSB sites (e.g. SAMI)."
+    },
+    {
+      "name": "بنك الجزيرة",
+      "name_en": "Bank AlJazira",
+      "platform": "Elevatus (v1, elevatus.io)",
+      "endpoint": "https://dammam-core-api.elevatus.io/api/v1/jobs",
+      "method": "GET",
+      "payload": null,
+      "fields": {
+        "list": "results.jobs[]",
+        "title": "results.jobs[].title",
+        "url": "results.jobs[].url",
+        "location": "not in the captured part (bank is Saudi-only: saudi_only:false)",
+        "date": "check created_at / posted fields in the full response",
+        "id": "results.jobs[].uuid, company_uuid"
+      },
+      "sample": [
+        "{\"statusCode\":200,\"message\":\"\",\"results\":{\"jobs\":[{\"uuid\":\"6f662c97-6a59-40e7-a93b-014704c1804e\",",
+        "\"title\":\"Solution Architecture Manager\",\"company_uuid\":\"44a11930-266c-42b5-b899-675fcea8cb12\",",
+        "\"url\":\"https://career.aljazirabank.com.sa/jobs/solution-architecture-manager-1781094419\",\"is_top\":true, ...}]}}"
+      ],
+      "status": "BLOCKER: the API's robots.txt is 404 (allowed), but a plain GET answers HTTP 406 because the portal's own JS adds a tenant header. The sample was captured from the rendered page, not fetched directly. Do not imitate browser headers (Origin/Referer). Check whether Elevatus documents a public jobs feed for tenants before writing an adapter. The rendered route found 0 links (jobs open through click handlers, not <a href>). Dallah Health is probably on the same platform, but its certificate has expired."
+    },
+    {
+      "name": "الصحة القابضة (التجمعات الصحية)",
+      "name_en": "Health Holding Company clusters (~20 portals *-careers.health.sa)",
+      "platform": "Elevatus (v2, elevatus.ai)",
+      "endpoint": "POST https://dammam-api.elevatus.ai/setup/candidate-side/all-jobs   (company_uuid from GET https://dammam-api.elevatus.ai/setup/branding/layout?domain_url={cluster}-careers.health.sa -> company.uuid)",
+      "method": "POST",
+      "payload": {
+        "limit": 50,
+        "currentPage": 1,
+        "hiring_type": "external",
+        "company_uuid": "<per cluster, e.g. riyadh1: ed6b7319-ff2e-43e4-b2bf-b09a28e1c7a7>"
+      },
+      "fields": {
+        "list": "results[]",
+        "total": "meta.total / meta.total_pages",
+        "title/url/location/date": "unknown: every cluster checked had 0 external jobs"
+      },
+      "sample": [
+        "{\"meta\":{\"current_page\":1,\"limit\":6,\"total\":0,\"total_pages\":0},\"results\":[]}",
+        "layout: {\"account\":{\"name\":{\"en\":\"Health Holding\"}},\"company\":{\"uuid\":\"ed6b7319-...\",\"name\":{\"ar\":\"تجمع الرياض الصحي الأول\"}}}",
+        "clusters: riyadh1-3, jeddah1-2, makkah, madinah, eastern, alahsa, alqassim, aseer, jazan, tabuk, hail, najran, albaha, aljouf, northernborders, hafralbatin, altaif"
+      ],
+      "status": "BLOCKER: dammam-api.elevatus.ai/robots.txt answers 503. Under RFC 9309 and base.py that is full disallow, so a direct API adapter must not run while this lasts. The cluster pages themselves are robots-allowed, so the 'rendered' adapter is the compliant route, but riyadh1, riyadh2, jeddah1, eastern and makkah all show 0 external jobs today (cluster hiring currently goes through Jadarat). Re-check monthly."
+    },
+    {
+      "name": "نيوم",
+      "name_en": "NEOM",
+      "platform": "Eightfold AI (PCS)",
+      "endpoint": "https://careers.neom.com/careers (page) and https://careers.neom.com/api/pcsx/... (search API; exact query NOT verified)",
+      "method": "GET",
+      "payload": null,
+      "fields": {
+        "note": "not fetched. Usual Eightfold PCS fields: positions[].name, .locations[], .t_create, .canonicalPositionUrl (unverified)"
+      },
+      "sample": [
+        "robots.txt: User-agent: * | Disallow: / | Allow: /$ | Allow: /careers | Allow: /api/pcsx | Allow: /careerhub/explore/jobs ..."
+      ],
+      "status": "BLOCKER is in our client, not on NEOM's side: RFC 9309 uses longest match, so /careers and /api/pcsx are ALLOWED, but base.robots_allowed uses Python's urllib.robotparser (first match wins) and reads it as disallowed. Fix the robots parser to longest-match with wildcards first, then capture the pcsx call and write an 'eightfold' adapter. Probably the highest-volume giant still missing."
+    }
+  ],
+  "covered_elsewhere": [
+    {
+      "name": "أرامكو السعودية",
+      "name_en": "Saudi Aramco",
+      "careers_url": "https://careers.aramco.com/",
+      "platform": "SAP SuccessFactors (unverified)",
+      "reason": "careers.aramco.com and aramco.com time out on robots.txt (tarpit), so base treats them as disallowed",
+      "alternative": "LinkedIn 'Aramco'; aggregator sites (Wadhefa, Saudi Jobs 24 re-post Aramco programs); Telegram job channels"
+    },
+    {
+      "name": "صندوق الاستثمارات العامة",
+      "name_en": "Public Investment Fund (PIF)",
+      "careers_url": "https://www.pif.gov.sa/en/careers/",
+      "platform": "unknown",
+      "reason": "pif.gov.sa Cloudflare 403; careers.pif.gov.sa has no DNS",
+      "alternative": "LinkedIn 'PIF'; GulfTalent; Telegram channels"
+    },
+    {
+      "name": "البحر الأحمر الدولية",
+      "name_en": "Red Sea Global",
+      "careers_url": "https://careers.redseaglobal.com/",
+      "platform": "unconfirmed (GCP Dammam host)",
+      "reason": "www Cloudflare 403; careers.* robots.txt fails (TLS hostname mismatch), so disallowed",
+      "alternative": "LinkedIn 'Red Sea Global'; GulfTalent; Bayt"
+    },
+    {
+      "name": "شركة الدرعية",
+      "name_en": "Diriyah Company",
+      "careers_url": "https://careers.diriyah.sa/",
+      "platform": "SAP SuccessFactors CSB (redirects to sap.com: not configured)",
+      "reason": "diriyah.sa Cloudflare 403; careers.diriyah.sa redirects to www.sap.com, which disallows us",
+      "alternative": "LinkedIn 'Diriyah Company'; Jadarat"
+    },
+    {
+      "name": "البنك الأهلي السعودي",
+      "name_en": "Saudi National Bank (SNB)",
+      "careers_url": "https://careers.alahli.com/",
+      "platform": "unknown",
+      "reason": "alahli.com and careers.alahli.com reject Python's TLS handshake (SSLV3_ALERT_HANDSHAKE_FAILURE), so robots unreadable",
+      "alternative": "LinkedIn 'Saudi National Bank'; Jadarat; Telegram channels"
+    },
+    {
+      "name": "بنك البلاد",
+      "name_en": "Bank Albilad",
+      "careers_url": "https://www.bankalbilad.com.sa/ar/about/Pages/e-careers.aspx",
+      "platform": "custom",
+      "reason": "e-careers page has no job links; no careers subdomain (DNS)",
+      "alternative": "LinkedIn 'Bank Albilad'; Jadarat"
+    },
+    {
+      "name": "مصرف الإنماء",
+      "name_en": "Alinma Bank",
+      "careers_url": "https://career.alinma.com/",
+      "platform": "custom SPA",
+      "reason": "empty shell; API behind Cloudflare Turnstile",
+      "alternative": "LinkedIn 'Alinma Bank'; Jadarat"
+    },
+    {
+      "name": "البنك السعودي الفرنسي",
+      "name_en": "Banque Saudi Fransi",
+      "careers_url": "https://www.alfransi.com.sa/english/careers",
+      "platform": "unknown",
+      "reason": "careers page has no listing; no careers subdomain",
+      "alternative": "LinkedIn 'Banque Saudi Fransi'; Jadarat"
+    },
+    {
+      "name": "بنك إس تي سي",
+      "name_en": "stc bank",
+      "careers_url": "https://stcbank.com.sa/web/guest/job-application",
+      "platform": "custom form",
+      "reason": "generic application form, no listing",
+      "alternative": "LinkedIn 'stc bank'; stc group CSB (careers.stc.com.sa, already connected)"
+    },
+    {
+      "name": "زين السعودية",
+      "name_en": "Zain KSA",
+      "careers_url": "https://sa.zain.com/about/careers/",
+      "platform": "custom",
+      "reason": "no listing; careers.sa.zain.com and career.sa.zain.com robots unreadable",
+      "alternative": "LinkedIn 'Zain KSA'"
+    },
+    {
+      "name": "جاهز",
+      "name_en": "Jahez",
+      "careers_url": "https://career.jahez.net/",
+      "platform": "custom SPA",
+      "reason": "Cloudflare Turnstile shell; jahez.net Cloudflare 403; no Ashby/Greenhouse/Lever/Recruitee board",
+      "alternative": "LinkedIn 'Jahez Group'"
+    },
+    {
+      "name": "نون",
+      "name_en": "noon",
+      "careers_url": "https://careers.noon.com/",
+      "platform": "unknown",
+      "reason": "robots.txt times out on every noon host, so disallowed; no Greenhouse/Lever/Ashby board",
+      "alternative": "LinkedIn 'noon'; Bayt"
+    },
+    {
+      "name": "المراعي",
+      "name_en": "Almarai",
+      "careers_url": "https://career5.successfactors.eu/career?company=AlMaraiP",
+      "platform": "SAP SuccessFactors legacy (XML feed)",
+      "reason": "The 'open XML feed' is the legacy SF endpoint career_ns=job_listing_summary&resultType=XML on career5.successfactors.eu (earlier research saw 52 jobs). That host's robots.txt is 'User-agent: * Disallow: / Disallow: /*company', so not fetched. careers.almarai.com does not answer; almarai.com sitemap has no job pages.",
+      "alternative": "Ask Almarai HR for written permission (then the feed is the best route); meanwhile LinkedIn 'Almarai', Jadarat, Telegram channels"
+    },
+    {
+      "name": "نادك",
+      "name_en": "NADEC",
+      "careers_url": "https://careers.nadec.com.sa/",
+      "platform": "unknown",
+      "reason": "careers.nadec.com.sa fails TLS handshake for Python; nadec.com.sa 404",
+      "alternative": "LinkedIn 'NADEC'; Jadarat"
+    },
+    {
+      "name": "أسواق العثيم",
+      "name_en": "Abdullah Al Othaim Markets",
+      "careers_url": "https://recruitment.othaimmarkets.com/",
+      "platform": "custom (login portal)",
+      "reason": "login-only recruitment portal, no public listing",
+      "alternative": "LinkedIn 'Abdullah Al Othaim Markets'; Telegram channels; aggregators"
+    },
+    {
+      "name": "بن داود القابضة",
+      "name_en": "BinDawood Holding",
+      "careers_url": "https://www.bindawoodholding.com/careers/",
+      "platform": "none",
+      "reason": "no public listing",
+      "alternative": "LinkedIn 'BinDawood Holding'"
+    },
+    {
+      "name": "البيك",
+      "name_en": "ALBAIK",
+      "careers_url": "",
+      "platform": "none",
+      "reason": "no careers page (/en/careers redirects home)",
+      "alternative": "LinkedIn 'ALBAIK'; Telegram channels"
+    },
+    {
+      "name": "كودو",
+      "name_en": "Kudu",
+      "careers_url": "https://careers.kudu.com.sa/",
+      "platform": "custom application form",
+      "reason": "kudu.com.sa/ar/careers has no job listing (the earlier '77' were job-related words, not postings); careers.kudu.com.sa is a CV form only",
+      "alternative": "LinkedIn 'kudu-corp'; Telegram channels"
+    },
+    {
+      "name": "هرفي",
+      "name_en": "Herfy",
+      "careers_url": "https://herfy.com/careers/",
+      "platform": "none",
+      "reason": "no listing; careers.herfy.com refuses connections",
+      "alternative": "LinkedIn 'Herfy'; Telegram channels; Marn / Sabbar (flexible jobs)"
+    },
+    {
+      "name": "مجموعة د. سليمان الحبيب",
+      "name_en": "Dr. Sulaiman Al Habib Medical Group",
+      "careers_url": "https://hmg.com/",
+      "platform": "none found",
+      "reason": "hmg.com/careers 404; no careers subdomain",
+      "alternative": "LinkedIn 'Dr. Sulaiman Al Habib Medical Group'; Bayt"
+    },
+    {
+      "name": "دله الصحية",
+      "name_en": "Dallah Health",
+      "careers_url": "https://careers.dallahhealth.com/",
+      "platform": "Elevatus",
+      "reason": "TLS certificate expired, so robots unreadable and disallowed",
+      "alternative": "LinkedIn 'Dallah Health'; Bayt"
+    },
+    {
+      "name": "السعودي الألماني الصحية",
+      "name_en": "Saudi German Health",
+      "careers_url": "https://career.saudigermanhealth.com/",
+      "platform": "Oracle Taleo (aa303.taleo.net)",
+      "reason": "career.* links to aa303.taleo.net, which has no DNS (dead tenant)",
+      "alternative": "LinkedIn 'Saudi German Health'; Bayt"
+    },
+    {
+      "name": "مستشفى الموسى",
+      "name_en": "Almoosa Health",
+      "careers_url": "https://careers.almoosa.com.sa/",
+      "platform": "unknown",
+      "reason": "almoosahealth.com.sa HTTP 521; careers.almoosa.com.sa robots unreadable",
+      "alternative": "LinkedIn 'Almoosa Health Group'"
+    },
+    {
+      "name": "مستشفى الملك فيصل التخصصي",
+      "name_en": "King Faisal Specialist Hospital & RC",
+      "careers_url": "https://www.kfshrc.edu.sa/en/home/careers",
+      "platform": "Oracle (erpweb.kfshrc.edu.sa)",
+      "reason": "careers page has no listing; erpweb.kfshrc.edu.sa robots.txt answers 503 (disallow)",
+      "alternative": "LinkedIn 'King Faisal Specialist Hospital & Research Centre'; Jadarat"
+    },
+    {
+      "name": "طيران ناس",
+      "name_en": "flynas",
+      "careers_url": "https://www.flynas.com/en/careers",
+      "platform": "unknown",
+      "reason": "Cloudflare 403; career.flynas.com robots unreadable",
+      "alternative": "LinkedIn 'flynas'"
+    },
+    {
+      "name": "طيران الرياض",
+      "name_en": "Riyadh Air",
+      "careers_url": "https://careers-riyadhair.icims.com/jobs/search",
+      "platform": "iCIMS",
+      "reason": "iCIMS portal answers 405 (AWS WAF challenge); riyadhair.com Akamai 403",
+      "alternative": "LinkedIn 'Riyadh Air'"
+    },
+    {
+      "name": "الخدمات الأرضية السعودية",
+      "name_en": "Saudi Ground Services",
+      "careers_url": "https://www.saudiags.com/",
+      "platform": "unknown",
+      "reason": "sgs.com.sa no DNS; saudiags.com/en/careers 404",
+      "alternative": "LinkedIn 'Saudi Ground Services'; Jadarat"
+    },
+    {
+      "name": "سبل (البريد السعودي)",
+      "name_en": "SPL Saudi Post",
+      "careers_url": "https://career.splonline.com.sa/",
+      "platform": "Talentera (Bayt)",
+      "reason": "Talentera portal reachable but no featured jobs on the home page; search results are robots-disallowed (/*/job-search-results/)",
+      "alternative": "Bayt (Talentera syndication); Jadarat. Re-check the home page with the Al-Dawaa 'rendered' pattern when jobs appear."
+    },
+    {
+      "name": "الخطوط الحديدية السعودية",
+      "name_en": "SAR Saudi Arabia Railways",
+      "careers_url": "https://www.sar.com.sa/en/careers",
+      "platform": "custom",
+      "reason": "careers page is a JS shell; career.sar.com.sa robots unreadable; sar.hhr.sa TLS fails",
+      "alternative": "LinkedIn 'Saudi Arabia Railways (SAR)'; Jadarat"
+    },
+    {
+      "name": "مجموعة بن لادن السعودية",
+      "name_en": "Saudi Binladin Group",
+      "careers_url": "https://careers.sbg.com.sa/",
+      "platform": "custom ASP.NET (talent.sbg.com.sa)",
+      "reason": "login/sign-up portal, no public job list",
+      "alternative": "LinkedIn 'Saudi Binladin Group'; Telegram channels"
+    },
+    {
+      "name": "نسما",
+      "name_en": "Nesma",
+      "careers_url": "https://careers.nesma.com/",
+      "platform": "unknown",
+      "reason": "careers.nesma.com robots unreadable (earlier 404)",
+      "alternative": "LinkedIn 'Nesma & Partners' / 'Nesma Holding'"
+    },
+    {
+      "name": "مجموعة المهيدب",
+      "name_en": "Al Muhaidib Group",
+      "careers_url": "",
+      "platform": "none",
+      "reason": "no careers page",
+      "alternative": "LinkedIn 'Al Muhaidib Group'"
+    },
+    {
+      "name": "مجموعة العليان",
+      "name_en": "Olayan Group",
+      "careers_url": "",
+      "platform": "none",
+      "reason": "no careers page",
+      "alternative": "LinkedIn 'The Olayan Group'"
+    }
+  ]
+}

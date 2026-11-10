@@ -1,0 +1,1799 @@
+[
+ {
+  "name": "أكوا باور",
+  "name_en": "ACWA Power",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.acwapower.com"
+ },
+ {
+  "name": "شركة المياه الوطنية",
+  "name_en": "National Water Company (NWC)",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-esst-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://fa-esst-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/"
+ },
+ {
+  "name": "لوبريف",
+  "name_en": "Luberef",
+  "group": "company",
+  "enabled": false,
+  "ats": "sf_csb",
+  "url": "https://careers.luberef.com",
+  "_why_disabled": "robots.txt disallows /search/ (2026-11-07); jobs reach us via LinkedIn/Jadarat"
+ },
+ {
+  "name": "إس تي سي",
+  "name_en": "stc",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.stc.com.sa"
+ },
+ {
+  "name": "موبايلي",
+  "name_en": "Mobily",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "careers.mobily.com.sa",
+  "site": "CX_4002",
+  "job_base": "https://careers.mobily.com.sa/hcmUI/CandidateExperience/en/sites/CX_4002/job/"
+ },
+ {
+  "name": "سلة",
+  "name_en": "Salla",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "salla"
+ },
+ {
+  "name": "فودكس",
+  "name_en": "Foodics",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "foodics"
+ },
+ {
+  "name": "تمارا",
+  "name_en": "Tamara",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "tamara"
+ },
+ {
+  "name": "البنك السعودي الأول",
+  "name_en": "Saudi Awwal Bank (SAB)",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.sab.com"
+ },
+ {
+  "name": "الشركة الوطنية للإسكان",
+  "name_en": "National Housing Company (NHC)",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "eghj.fa.em2.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://eghj.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/"
+ },
+ {
+  "name": "روشن",
+  "name_en": "ROSHN",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-epph-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://fa-epph-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/"
+ },
+ {
+  "name": "القدية",
+  "name_en": "Qiddiya",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "qiddiya-investment-company-1"
+ },
+ {
+  "name": "المربع الجديد",
+  "name_en": "New Murabba",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-exjc-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_3001",
+  "job_base": "https://fa-exjc-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_3001/job/"
+ },
+ {
+  "name": "داون تاون السعودية",
+  "name_en": "Saudi Downtown Company",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-eugq-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://fa-eugq-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/"
+ },
+ {
+  "name": "البحري",
+  "name_en": "Bahri",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-eqhm-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1002",
+  "job_base": "https://fa-eqhm-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1002/job/"
+ },
+ {
+  "name": "صافولا",
+  "name_en": "Savola Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-ewxl-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1001",
+  "job_base": "https://fa-ewxl-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/"
+ },
+ {
+  "name": "النهدي",
+  "name_en": "Nahdi Medical",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "efan.fa.em3.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://efan.fa.em3.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/"
+ },
+ {
+  "name": "أمريكانا",
+  "name_en": "Americana Restaurants",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-eucb-dev7-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "Americana",
+  "job_base": "https://fa-eucb-dev7-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Americana/job/"
+ },
+ {
+  "name": "الحكير",
+  "name_en": "Fawaz Alhokair (Cenomi Retail)",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "ehkp.fa.em2.oraclecloud.com",
+  "site": "CX",
+  "job_base": "https://ehkp.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/"
+ },
+ {
+  "name": "الفنار",
+  "name_en": "alfanar",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://jobs.alfanar.com/alfanar"
+ },
+ {
+  "name": "الزامل للصناعة",
+  "name_en": "Zamil Industrial",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "elzx.fa.em2.oraclecloud.com",
+  "site": "CX_2001",
+  "job_base": "https://elzx.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/"
+ },
+ {
+  "name": "إم بي سي",
+  "name_en": "MBC Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "ehff.fa.em2.oraclecloud.com",
+  "site": "CX_2001",
+  "job_base": "https://ehff.fa.em2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/"
+ },
+ {
+  "name": "وزارة الصناعة والثروة المعدنية",
+  "name_en": "Ministry of Industry and Mineral Resources",
+  "group": "gov",
+  "enabled": false,
+  "ats": "sf_csb",
+  "url": "https://ministry15.jobs.hr.cloud.sap",
+  "_why_disabled": "server TLS chain incomplete (missing intermediate cert), 2026-11-07; posts via Jadarat"
+ },
+ {
+  "name": "وزارة الثقافة",
+  "name_en": "Ministry of Culture",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.moc.gov.sa"
+ },
+ {
+  "name": "وزارة الرياضة",
+  "name_en": "Ministry of Sport",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.mos.gov.sa"
+ },
+ {
+  "name": "البنك المركزي السعودي",
+  "name_en": "Saudi Central Bank (SAMA)",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.sama.gov.sa"
+ },
+ {
+  "name": "هيئة كفاءة الإنفاق والمشروعات الحكومية",
+  "name_en": "EXPRO",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.expro.gov.sa"
+ },
+ {
+  "name": "مصرف الراجحي",
+  "name_en": "Al Rajhi Bank",
+  "group": "company",
+  "ats": "rendered",
+  "url": "https://careers.alrajhibank.com.sa/ar/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "بنك الرياض",
+  "name_en": "Riyad Bank",
+  "group": "company",
+  "ats": "rendered",
+  "url": "https://careers.riyadbank.com/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "البنك العربي الوطني",
+  "name_en": "Arab National Bank",
+  "group": "company",
+  "ats": "rendered",
+  "url": "https://careers.anb.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "البنك السعودي للاستثمار",
+  "name_en": "Saudi Investment Bank",
+  "group": "company",
+  "ats": "rendered",
+  "url": "https://careers.saib.com.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "سدافكو",
+  "name_en": "SADAFCO",
+  "group": "company",
+  "ats": "rendered",
+  "url": "https://careers.sadafco.com/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "وزارة التجارة",
+  "name_en": "Ministry of Commerce",
+  "group": "gov",
+  "ats": "rendered",
+  "url": "https://talent.mc.gov.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "الهيئة العامة للإحصاء",
+  "name_en": "GASTAT",
+  "group": "gov",
+  "ats": "rendered",
+  "url": "https://careers.stats.gov.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "الهيئة الملكية للجبيل وينبع",
+  "name_en": "Royal Commission for Jubail and Yanbu",
+  "group": "gov",
+  "ats": "rendered",
+  "url": "https://careers.rcjy.gov.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "الهيئة السعودية للتخصصات الصحية",
+  "name_en": "SCFHS",
+  "group": "gov",
+  "ats": "rendered",
+  "url": "https://careers.scfhs.org.sa/",
+  "link_contains": "/jobs/",
+  "enabled": true,
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "Sarj.ai",
+  "name_en": "Sarj.ai",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "sarjai",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Echelon",
+  "name_en": "Echelon",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "echeloncareers",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "LAKEORA",
+  "name_en": "LAKEORA",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "lakeora",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Cohere",
+  "name_en": "Cohere",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "cohere",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "ElevenLabs",
+  "name_en": "ElevenLabs",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "elevenlabs",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "لين",
+  "name_en": "Lean Technologies",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "leantech",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Thndr",
+  "name_en": "Thndr",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "thndr",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Applied Intuition",
+  "name_en": "Applied Intuition",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "applied",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Checkout.com",
+  "name_en": "Checkout.com",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "checkout.com",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Cognition",
+  "name_en": "Cognition",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "cognition",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Alan",
+  "name_en": "Alan",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "alan",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Immersive",
+  "name_en": "Immersive",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "immersivelabs",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "TakeIn",
+  "name_en": "TakeIn",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "takein",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "UiPath",
+  "name_en": "UiPath",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "uipath",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Filigran",
+  "name_en": "Filigran",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "filigran",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Nash",
+  "name_en": "Nash",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "nash",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Redesign Health",
+  "name_en": "Redesign Health",
+  "group": "company",
+  "enabled": true,
+  "ats": "ashby",
+  "board": "Redesign Health",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "لوسيد موتورز",
+  "name_en": "Lucid Motors",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "lucidmotors",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "BRKZ",
+  "name_en": "BRKZ",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "brkz",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Jensen Hughes",
+  "name_en": "Jensen Hughes",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "jensenhughes",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "MENA Consultant",
+  "name_en": "MENA Consultant",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "menaconsultant",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "Decima International",
+  "name_en": "Decima International",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "decimainternational",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Artefact",
+  "name_en": "Artefact",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "artefact",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "MinIO",
+  "name_en": "MinIO",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "minio",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Scale AI",
+  "name_en": "Scale AI",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "scaleai",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Veeam Software",
+  "name_en": "Veeam Software",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "veeamsoftware",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "KitchenPark",
+  "name_en": "KitchenPark",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "kitchenpark",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Thunes",
+  "name_en": "Thunes",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "thunes",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "AcuTech Group",
+  "name_en": "AcuTech Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "acutechgroupinc",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "BeyondTrust",
+  "name_en": "BeyondTrust",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "beyondtrust",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Datadog",
+  "name_en": "Datadog",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "datadog",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "dmg events",
+  "name_en": "dmg events",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "dmgevents",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Elastic",
+  "name_en": "Elastic",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "elastic",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Gallup",
+  "name_en": "Gallup",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "gallup",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Gibson Dunn",
+  "name_en": "Gibson Dunn",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "gibsondunn",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Nozomi Networks",
+  "name_en": "Nozomi Networks",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "nozominetworks",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Armada",
+  "name_en": "Armada",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "armada",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Databricks",
+  "name_en": "Databricks",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "databricks",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "GitLab",
+  "name_en": "GitLab",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "gitlab",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "LeoLabs",
+  "name_en": "LeoLabs",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "leolabsinc",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Ogilvy MENA",
+  "name_en": "Ogilvy MENA",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "ogilvymena",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Pure Storage",
+  "name_en": "Pure Storage",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "purestorage",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Telnyx",
+  "name_en": "Telnyx",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "telnyx54",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Teneo",
+  "name_en": "Teneo",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "teneolinkedin",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Thoughtworks",
+  "name_en": "Thoughtworks",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "thoughtworks",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "WPP Media",
+  "name_en": "WPP Media",
+  "group": "company",
+  "enabled": true,
+  "ats": "greenhouse",
+  "board": "wppmedia",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "سوم",
+  "name_en": "SOUM",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "soum",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Trendyol",
+  "name_en": "Trendyol",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "trendyol",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Zeeco",
+  "name_en": "Zeeco",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "zeeco",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Flow",
+  "name_en": "Flow",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "flowlife",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Infinite PL",
+  "name_en": "Infinite PL",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "infinitepl",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "RWS TrainAI",
+  "name_en": "RWS TrainAI",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "rws",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Contentsquare",
+  "name_en": "Contentsquare",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "contentsquare",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Creatio",
+  "name_en": "Creatio",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "creatio",
+  "verified": "2026-11-07",
+  "api_host": "eu",
+  "strict_location": true
+ },
+ {
+  "name": "Efficio",
+  "name_en": "Efficio",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "efficioconsulting",
+  "verified": "2026-11-07",
+  "api_host": "eu",
+  "strict_location": true
+ },
+ {
+  "name": "Lalamove",
+  "name_en": "Lalamove",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "lalamove",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Lionbridge",
+  "name_en": "Lionbridge",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "lionbridge",
+  "verified": "2026-11-07",
+  "api_host": "eu",
+  "strict_location": true
+ },
+ {
+  "name": "Quadcode",
+  "name_en": "Quadcode",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "quadcode",
+  "verified": "2026-11-07",
+  "api_host": "eu",
+  "strict_location": true
+ },
+ {
+  "name": "Shield AI",
+  "name_en": "Shield AI",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "shieldai",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Ajax Systems",
+  "name_en": "Ajax Systems",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "ajax",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Anomali",
+  "name_en": "Anomali",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "anomali",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Appen (CrowdGen)",
+  "name_en": "Appen (CrowdGen)",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "appen",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "BioCatch",
+  "name_en": "BioCatch",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "biocatch",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Strategic Gears",
+  "name_en": "Strategic Gears",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "strategicgears",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Vision Invest",
+  "name_en": "Vision Invest",
+  "group": "company",
+  "enabled": true,
+  "ats": "lever",
+  "board": "visioninvest",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Hudson Manpower",
+  "name_en": "Hudson Manpower",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "hudsonmanpower",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "عزم السعودية",
+  "name_en": "Saudi AZM",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "azmtalent",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "مؤسسة كأس العالم للرياضات الإلكترونية",
+  "name_en": "Esports World Cup Foundation",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "esportsworldcupfoundation",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Lincoln College International",
+  "name_en": "Lincoln College International",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "lincolnksa",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "يونيفونك",
+  "name_en": "Unifonic",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "unifonic",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Rider Levett Bucknall",
+  "name_en": "Rider Levett Bucknall",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "riderlevettbucknall",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Flying Bisons",
+  "name_en": "Flying Bisons",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "flyingbisons",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "عزم",
+  "name_en": "AZM",
+  "group": "company",
+  "enabled": false,
+  "ats": "recruitee",
+  "board": "azm",
+  "verified": "2026-11-07",
+  "_why_disabled": "only a General Application post (2026-11-07)"
+ },
+ {
+  "name": "CMCOM",
+  "name_en": "CMCOM",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "cmcom",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Infopro Learning",
+  "name_en": "Infopro Learning",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "infoprolearning",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Italconsult",
+  "name_en": "Italconsult",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "italconsult",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Synapse Analytics",
+  "name_en": "Synapse Analytics",
+  "group": "company",
+  "enabled": true,
+  "ats": "recruitee",
+  "board": "synapseanalytics",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Eram Talent",
+  "name_en": "Eram Talent",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "eramtalent-1",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "Muller's Solutions",
+  "name_en": "Muller's Solutions",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "mullers-solutions-1",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "جسارة",
+  "name_en": "JASARA PMC",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "jasarapmc",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "HanmiGlobal Saudi",
+  "name_en": "HanmiGlobal Saudi",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "hanmiglobal-saudi",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Taj HR",
+  "name_en": "Taj HR",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "tajhr",
+  "verified": "2026-11-07",
+  "agency": true
+ },
+ {
+  "name": "InnovationTeam",
+  "name_en": "InnovationTeam",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "innovationteam",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "ويبوك",
+  "name_en": "webook.com",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "webook",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "DeepSource Technologies",
+  "name_en": "DeepSource Technologies",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "deepsource",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "سفن",
+  "name_en": "SEVEN",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "seven-7",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "نينجا",
+  "name_en": "Ninja",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "ananinja",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "لوسيديا",
+  "name_en": "Lucidya",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "lucidya",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "المتحدة للسيارات",
+  "name_en": "United Motors Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "umg-careers",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Master-Works",
+  "name_en": "Master-Works",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "masterworksco",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "SIHAMCO",
+  "name_en": "SIHAMCO",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "sihamco",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Squadio",
+  "name_en": "Squadio",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "squadio23",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "T63",
+  "name_en": "T63",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "t63",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "ABC Center",
+  "name_en": "ABC Center",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "abc-center",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "مزن",
+  "name_en": "Mozn",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "mozn-ai",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Robusta",
+  "name_en": "Robusta",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "robusta",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "مجموعة الكفري",
+  "name_en": "Alkaffary Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "alkaffary-group",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Apt Resources",
+  "name_en": "Apt Resources",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "apt-resources",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "وعد التعليمية",
+  "name_en": "Waad Education",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "waad-education",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Capitex",
+  "name_en": "Capitex",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "capitex",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "مهارة للموارد البشرية",
+  "name_en": "Maharah Human Resources",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "maharahjobs",
+  "verified": "2026-11-07",
+  "agency": true
+ },
+ {
+  "name": "Fuku",
+  "name_en": "Fuku",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "fuku",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "Hire Fellows",
+  "name_en": "Hire Fellows",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "hirefellows",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "خبرتي",
+  "name_en": "Khibraty",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "khibraty",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "مدار",
+  "name_en": "Madar",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "madarplatform",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "PetroApp",
+  "name_en": "PetroApp",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "petroapp",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "SSC HR Solutions",
+  "name_en": "SSC HR Solutions",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "ssc-hr",
+  "verified": "2026-11-07",
+  "agency": true
+ },
+ {
+  "name": "Adree",
+  "name_en": "Adree",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "adree",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Azeus Convene",
+  "name_en": "Azeus Convene",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "azeus-convene",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Ebra",
+  "name_en": "Ebra",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "ebra",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "الوطنية لنظم المعلومات",
+  "name_en": "Al-Watania Information Systems",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "alwatania-information-systems",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "أوتاد",
+  "name_en": "Awtad",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "awtad",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "جاذر إن",
+  "name_en": "Gathern",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "gathern",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "مختبرات البرج",
+  "name_en": "AlBorg Diagnostics",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "alborg-diagnostics",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Horizontal Digital",
+  "name_en": "Horizontal Digital",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "horizontal-digital",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Rawafid",
+  "name_en": "Rawafid",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "rawafid",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "ذا شفز",
+  "name_en": "The Chefz",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "the-chefz-co",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Intellect",
+  "name_en": "Intellect",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "intellecthq",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "جيني",
+  "name_en": "Jeeny",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "jeeny",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Advansys",
+  "name_en": "Advansys",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "advansys-esc-1",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Dozan",
+  "name_en": "Dozan",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "dozansa",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Mirai Arabian International",
+  "name_en": "Mirai Arabian International",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "playmirai",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Agility",
+  "name_en": "Agility",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "agility",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "فلاي أكيد",
+  "name_en": "FlyAkeed",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "akeed",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "مرسول",
+  "name_en": "Mrsool",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "mrsool-3",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Specialized Technical Services",
+  "name_en": "Specialized Technical Services",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "stsmiddleeast",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "Bank of Jordan",
+  "name_en": "Bank of Jordan",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "bank-of-jordan",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "COGNNA",
+  "name_en": "COGNNA",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "cognna",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "High Street Resources",
+  "name_en": "High Street Resources",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "high-street-resources",
+  "verified": "2026-11-07",
+  "strict_location": true,
+  "agency": true
+ },
+ {
+  "name": "Inbox Business Technologies",
+  "name_en": "Inbox Business Technologies",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "inbox-business-technologies",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Innovative Solutions",
+  "name_en": "Innovative Solutions",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "is",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Nowlun",
+  "name_en": "Nowlun",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "nowlun",
+  "verified": "2026-11-07",
+  "strict_location": true
+ },
+ {
+  "name": "Radiant Hospitality Company",
+  "name_en": "Radiant Hospitality Company",
+  "group": "company",
+  "enabled": true,
+  "ats": "workable",
+  "board": "radiant-hospitality",
+  "verified": "2026-11-07"
+ },
+ {
+  "name": "معادن",
+  "name_en": "Ma'aden",
+  "group": "company",
+  "enabled": true,
+  "ats": "jsonld",
+  "url": "https://careers.maaden.com/sitemap.xml",
+  "link_contains": "/job/"
+ },
+ {
+  "name": "عبد اللطيف جميل",
+  "name_en": "Abdul Latif Jameel",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.alj.com",
+  "strict_location": true
+ },
+ {
+  "name": "بترورابغ",
+  "name_en": "Petro Rabigh",
+  "group": "company",
+  "enabled": true,
+  "ats": "rss",
+  "url": "https://careers.petrorabigh.com/jobs.rss"
+ },
+ {
+  "name": "صيدليات الدواء",
+  "name_en": "Al-Dawaa Pharmacies",
+  "group": "company",
+  "enabled": true,
+  "ats": "rendered",
+  "url": "https://careers.al-dawaa.com/en/",
+  "link_contains": "/jobs/",
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "علم",
+  "name_en": "Elm",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://career.elm.sa"
+ },
+ {
+  "name": "الخطوط السعودية",
+  "name_en": "Saudia Group",
+  "group": "company",
+  "enabled": true,
+  "ats": "html",
+  "url": "https://careers.saudia.com/search/?q=&locale=en_US&startrow=0",
+  "card": {
+   "tag": "li",
+   "cls": "job-tile"
+  },
+  "title": {
+   "tag": "a",
+   "cls": "jobTitle-link"
+  },
+  "location": {
+   "tag": "div",
+   "cls": "location"
+  },
+  "date": {
+   "tag": "div",
+   "cls": "date"
+  }
+ },
+ {
+  "name": "صدارة للكيميائيات",
+  "name_en": "Sadara Chemical",
+  "group": "company",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.sadara.com",
+  "saudi_only": false
+ },
+ {
+  "name": "جامعة الملك عبدالله للعلوم والتقنية",
+  "name_en": "KAUST",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://careers.kaust.edu.sa"
+ },
+ {
+  "name": "هيئة الزكاة والضريبة والجمارك",
+  "name_en": "ZATCA",
+  "group": "gov",
+  "enabled": true,
+  "ats": "html",
+  "urls": [
+   "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=0",
+   "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=5",
+   "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=10",
+   "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=15"
+  ],
+  "url": "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=0",
+  "card": {
+   "tag": "li",
+   "cls": "job-tile"
+  },
+  "title": {
+   "tag": "a",
+   "cls": "jobTitle-link"
+  }
+ },
+ {
+  "name": "هيئة الحكومة الرقمية",
+  "name_en": "Digital Government Authority (DGA)",
+  "group": "gov",
+  "enabled": true,
+  "ats": "rendered",
+  "url": "https://career.dga.gov.sa/ar/",
+  "link_contains": "/jobs/",
+  "link_regex": "/jobs/[^/]+-\\d+/?$"
+ },
+ {
+  "name": "وزارة الاستثمار",
+  "name_en": "Ministry of Investment (MISA)",
+  "group": "gov",
+  "enabled": true,
+  "ats": "sf_csb",
+  "url": "https://jobs.misa.gov.sa",
+  "locale": "ar_SA"
+ },
+ {
+  "name": "وزارة الخارجية",
+  "name_en": "Ministry of Foreign Affairs",
+  "group": "gov",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-eviv-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_4003",
+  "job_base": "https://fa-eviv-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/ar/sites/CX_4003/job/"
+ },
+ {
+  "name": "الهيئة السعودية للسياحة",
+  "name_en": "Saudi Tourism Authority",
+  "group": "gov",
+  "enabled": true,
+  "ats": "oracle",
+  "host": "fa-esiv-saasfaprod1.fa.ocs.oraclecloud.com",
+  "site": "CX_1",
+  "job_base": "https://fa-esiv-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/ar/sites/CX_1/job/"
+ },
+ {
+  "name": "تابي",
+  "name_en": "tabby",
+  "group": "company",
+  "enabled": true,
+  "ats": "pinpoint",
+  "board": "tabby",
+  "strict_location": true
+ },
+ {
+  "name": "منصة رزق",
+  "name_en": "Rizq platform (rizqsa.com)",
+  "group": "board",
+  "enabled": true,
+  "ats": "jsonld",
+  "url": "https://rizqsa.com/sitemap.xml",
+  "link_contains": "/jobs/",
+  "interval": 3.0,
+  "source_label": "منصة رزق (rizqsa.com)",
+  "facts_only": true,
+  "verified": "2026-11-10"
+ }
+]

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>رزق | أخبار الوظائف من كل مكان، مجاناً</title>
+  <meta name="description" content="رزق خدمة مجانية تنقل لك أخبار الوظائف السعودية من مصادرها الأصلية في مكان واحد، وتنبّهك على تيليجرام بما يناسب تخصصك. مبادرة فردية، بدون إعلانات.">
+  <meta name="theme-color" content="#161B3B">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+Bhaijaan+2:wght@800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Shared SVG defs: logo mark (lit archway + walking figure + gold spark) -->
+  <svg class="svg-defs" aria-hidden="true" focusable="false">
+    <defs>
+      <radialGradient id="rizq-glow" cx="50%" cy="72%" r="70%">
+        <stop offset="0%" stop-color="#FFF1D0"/>
+        <stop offset="35%" stop-color="#FFB84D"/>
+        <stop offset="100%" stop-color="#E8A33D"/>
+      </radialGradient>
+      <linearGradient id="rizq-frame" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#FFB84D"/>
+        <stop offset="100%" stop-color="#E8A33D" stop-opacity=".55"/>
+      </linearGradient>
+      <symbol id="rizq-mark" viewBox="0 0 64 64">
+        <path d="M32 1.5 L33.9 6.1 L38.5 8 L33.9 9.9 L32 14.5 L30.1 9.9 L25.5 8 L30.1 6.1 Z" fill="#FFB84D"/>
+        <path d="M15 61 V33 A17 17 0 0 1 49 33 V61" fill="none" stroke="url(#rizq-frame)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M20.5 61 V33.5 A11.5 11.5 0 0 1 43.5 33.5 V61 Z" fill="url(#rizq-glow)"/>
+        <circle cx="32" cy="43" r="2.7" fill="#1A1B3A"/>
+        <path d="M29.4 61 L30.5 48.6 Q32 46.6 33.5 48.6 L34.6 61 Z" fill="#1A1B3A"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <button type="button" class="skip-link" id="skip-link">تخطَّ إلى المحتوى</button>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="#/" class="brand" aria-label="رزق - الصفحة الرئيسية">
+        <svg class="brand-mark" aria-hidden="true"><use href="#rizq-mark"/></svg>
+        <span class="brand-word">رزق</span>
+      </a>
+      <nav class="nav" aria-label="القائمة الرئيسية">
+        <a href="#/" data-nav="home">الرئيسية</a>
+        <a href="#/jobs" data-nav="jobs">الوظائف</a>
+        <a href="#/coop" data-nav="coop" class="nav-students"><span class="lbl-long">التدريب التعاوني</span><span class="lbl-short">للطلاب</span></a>
+        <a href="#/scholarships" data-nav="scholarships" class="nav-wide">الابتعاث</a>
+        <a href="#/post" data-nav="post">أعلن عن وظيفة</a>
+        <a href="#/register" data-nav="register" class="btn btn-gold btn-sm" id="nav-register"><span class="lbl-long">اشترك في التنبيهات</span><span class="lbl-short">اشترك</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>جارٍ تحميل الوظائف...</span>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <svg class="brand-mark" aria-hidden="true"><use href="#rizq-mark"/></svg>
+        <span><strong>رزق</strong> &middot; ننقل لك أخبار الوظائف من مصادرها، مجاناً</span>
+      </div>
+      <nav class="footer-links" aria-label="روابط">
+        <a href="#/coop">التدريب التعاوني</a>
+        <a href="#/scholarships">الابتعاث</a>
+        <a href="#/post">أعلن عن وظيفة</a>
+        <a href="#/support" id="footer-support">ادعم رزق</a>
+        <a href="#/privacy">الخصوصية</a>
+      </nav>
+      <p class="footer-note">رزق مبادرة فردية، وليس جهة توظيف: لا نستقبل طلبات التوظيف، والتقديم يتم عند الجهة صاحبة الإعلان.</p>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/app.js"></script>
+  <script src="js/portal.js"></script>
+  <script src="js/programs.js"></script>
+</body>
+</html>

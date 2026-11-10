@@ -1,0 +1,27 @@
+# Public Saudi job channels read via https://t.me/s/<handle> (no login).
+# One handle per line, without @. Lines starting with # are ignored.
+# Verified active on 2026-11-06. Channels die or change: review this list monthly.
+ewdifh
+cd4cd
+jobs4ksa
+wadhefadotcom
+saudijobs24
+sahm0000
+fu1sa
+technomajed
+Jobsonlinesa
+MajidSociety1
+Tanqeeb_KSA_Jobs
+jobsonlineksa
+# saudiajobschannel  (removed 2026-11-07: Egyptian recruitment office, not Saudi jobs)
+Saudijobs24com
+dammamjobs
+
+# saudijobs24 regional network (added 2026-11-07)
+Riyadhjobstoday
+jobsjeddah24
+sharqiahjobs
+qassimjobs24
+KSAMilitaryjobs
+# Co-op training (التدريب التعاوني) announcements, verified 2026-11-07
+cooptraning_inksa

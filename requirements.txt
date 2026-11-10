@@ -1,0 +1,3 @@
+# Vercel (bot + site API). The collectors' extra packages are in requirements-collect.txt
+pg8000==1.31.6
+pypdf==7.0.0

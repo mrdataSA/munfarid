@@ -1,0 +1,18 @@
+# Uploaded to Vercel: the site files, api/, backend/, server.py, snapshot/, pub/
+.env
+.env.*
+.git/
+.github/
+data/
+logs/
+tests/
+docs/
+tools/
+CLAUDE.md
+start.bat
+run_collectors.py
+requirements-collect.txt
+collectors/*.py
+collectors/__pycache__/
+**/__pycache__/
+**/*.pyc

@@ -1,0 +1,14 @@
+# Secrets and private data: never in the repository
+.env
+.env.*
+data/
+logs/
+snapshot/
+pub/
+.vercel/
+# Private notes (kept on Raed's PC only)
+CLAUDE.md
+docs/
+# Python
+__pycache__/
+*.pyc

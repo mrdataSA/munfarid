@@ -1,0 +1,423 @@
+# ATS slug discovery: notes (2026-11-07)
+
+Companion to `ats_slugs.json`: 134 verified slugs, 2,480 Saudi jobs counted.
+Every count came from the project adapters in `collectors/ats.py` with `strict_location: true`, so a job without a location was not counted. The adapters ran through `collectors.base`, which handles robots.txt, per-host pacing and block detection. Three boards answered with more than 5 MiB (the `base.MAX_BYTES` limit), so they were re-counted with a lighter request through `base.fetch_json`:
+- Greenhouse boards: the same `/jobs` endpoint without `content=true`.
+- Lever boards: `mode=json&limit=50&skip=N` pages.
+
+No host blocked us (no 401/403/429). No proxies, stealth, or retries around a refusal were used.
+
+## Platform-level findings
+
+- **SmartRecruiters is not usable.** `api.smartrecruiters.com/robots.txt` has `User-agent: * / Disallow: /` and allows only `LinkedInBot`. `base.fetch_json` raises `Disallowed`, so no SmartRecruiters slug was checked. The existing `smartrecruiters` adapter fails the same way.
+  - Slugs seen in search results but not checked, because of this rule: `AECOM2`, `PublicisGroupe`, `DeliveryHero` (HungerStation/talabat), `FireEyeInc1` (Mandiant), `SmartDev1`, `BTranz`, `InformaGroupPlc`, `UmdaschGroup`, `EgisGroup`, `Sutherland`, `ASASRecruiting`, `TalentDimensionsConsulting`, `JobsForHumanity`.
+- **The Greenhouse EU API host does not exist.** `boards-api.eu.greenhouse.io` returns NXDOMAIN; `job-boards.eu.greenhouse.io` resolves, but it is only the HTML board.
+  - Boards that live on the EU site (`tamara`, `brkz`, `menaconsultant`, `veeamsoftware`) answer normally on the US API `boards-api.greenhouse.io`. Every Greenhouse slug here therefore uses the US host.
+  - `"api_host": "eu"` for Greenhouse in `ats.py` would point at a dead host.
+- **Lever EU works.** `api.eu.lever.co` answers. Four boards exist only there: `creatio`, `efficioconsulting`, `lionbridge`, `quadcode`. They are marked `"api_host": "eu"`.
+- **Ashby.** `api.ashbyhq.com/robots.txt` answers 401. Ashby boards were checked only through the `ashby` adapter, which skips the robots check for this one documented public API, as the coordinator instructed. No other host had its robots check skipped.
+- **Responses over 5 MiB.** Some adapter requests return more than `base.MAX_BYTES` and fail with "response too large":
+  - Greenhouse with `?content=true`: `wppmedia`, `lucidmotors`, `databricks`, `cloudflare`, `stripe`, `elastic`, `okx`, `agoda`, `braze`.
+  - Lever full `mode=json`: `palantir`, `veeva`, `shieldai`, `tsmg`.
+  - Ashby: `openai`.
+  - In production these boards will fail every run unless the adapter pages through results (Lever `limit`/`skip`) or drops `content=true` (Greenhouse).
+- **Workable `locations[]`.** Workable jobs carry a `locations[]` array (`country`, `countryCode`, `city`, `region`, `hidden`) next to `city`/`state`/`country`. The adapter reads only the flat fields, so a job whose second location is Saudi is missed.
+- **Lever `country`.** Lever jobs also carry `country` (ISO code, e.g. "SA") and `workplaceType`. They are not used for the count.
+- **Recruitee `locations[].name`.** In Recruitee, `locations[].name` is the office label (for example "Saudi AZM"), not a place. The adapter correctly uses `city`/`state`/`country`.
+- **Workable accounts with no open jobs.** Many Workable accounts exist but have 0 open jobs today, including `tabby`, `jahez`, `hungerstation`, `careersaudia`, `intdv`, `fgc`, `zid`, `lendo`, `nana`, `sary`, `floward`, `barq`, `calo` and `mrsool`. Mrsool's live board is `mrsool-3`. These are worth re-checking later.
+- **Tabby uses Pinpoint** (`tabby.pinpointhq.com`), which is not one of the six platforms.
+- **Recruitment agencies.** Agency-type accounts (marked `"agency": true`) hold 1,458 of the 2,480 jobs. Eram Talent alone has 965 and Muller's Solutions has 335. They are real postings for client employers, but many are evergreen or old, so treat them as a separate source.
+- **`strict_location`.** Every company not clearly headquartered in Saudi Arabia is marked `"strict_location": true`.
+
+## Search queries that found the most companies
+
+The search tool ignored the `site:` operator: every `site:...` query returned unrelated boards. Restricting the domain worked instead (`allowed_domains=[...]`). The best queries, in order:
+1. `allowed_domains=apply.workable.com`: "Riyadh Saudi Arabia jobs", "Jeddah Saudi Arabia", "Dammam Khobar Saudi Arabia", "KSA Saudi nationals only Riyadh", "\"based in Riyadh\"", "Riyadh software developer KSA", "Vision 2030 Saudi company current openings Riyadh", "Riyadh restaurant retail hospitality jobs", "Riyadh manufacturing factory Saudi current openings". These found about 45 of the verified slugs.
+2. `allowed_domains=job-boards.greenhouse.io, boards.greenhouse.io`: "Riyadh Saudi Arabia jobs", "KSA Saudi nationals Riyadh office", "Dammam Khobar Dhahran", "Riyadh sales manager Saudi Arabia", "Riyadh consultant manager Saudi Arabia", "\"based in Riyadh\"". The EU board domain `job-boards.eu.greenhouse.io` also helped with "Riyadh Saudi Arabia careers".
+3. `allowed_domains=jobs.lever.co`: "Riyadh Saudi Arabia jobs", "KSA Saudi nationals", "Dammam Khobar Saudi Arabia", "Jeddah Saudi Arabia". For EU boards, use `jobs.eu.lever.co` with "Riyadh Saudi Arabia".
+4. `allowed_domains=jobs.ashbyhq.com`: "Riyadh Saudi Arabia", "Saudi Arabia country manager KSA", "Saudi Arabia hybrid Riyadh engineer".
+5. `allowed_domains=recruitee.com`: "Riyadh Saudi Arabia jobs", "Jeddah KSA Saudi", "Vision 2030 Riyadh Saudi company careers", "KSA Riyadh hybrid".
+6. `allowed_domains=jobs.workable.com`: this is Workable's job search. It names companies but not slugs, so the slug has to be guessed (that is how `webook` and `agility` were found).
+
+Guessing slugs from company names (the seed list) worked poorly. Most Saudi startups in the seed list either use another ATS (Pinpoint, custom pages, Workday) or have an empty Workable account.
+
+## Slugs tried that did not verify
+- ashby `alat` (Alat): 404 (no such board)
+- ashby `anthropic` (Anthropic): 404 (no such board)
+- ashby `calo` (Calo): 404 (no such board)
+- ashby `careem` (Careem): 404 (no such board)
+- ashby `clickhouse` (ClickHouse): no Saudi jobs now
+- ashby `confluent` (Confluent): no Saudi jobs now
+- ashby `cursor` (cursor): no Saudi jobs now
+- ashby `deel` (Deel): no Saudi jobs now
+- ashby `foodics` (Foodics): 404 (no such board)
+- ashby `geidea` (Geidea): 404 (no such board)
+- ashby `groq` (Groq): 404 (no such board)
+- ashby `harvey` (Harvey): no Saudi jobs now
+- ashby `humain` (HUMAIN): 404 (no such board)
+- ashby `hyperpay` (HyperPay): 404 (no such board)
+- ashby `kitopi` (Kitopi): 404 (no such board)
+- ashby `kraken` (Kraken): 404 (no such board)
+- ashby `kraken.com` (Kraken): no Saudi jobs now
+- ashby `linear` (Linear): no Saudi jobs now
+- ashby `lovable` (lovable): no Saudi jobs now
+- ashby `mistral` (Mistral AI): 404 (no such board)
+- ashby `moyasar` (Moyasar): 404 (no such board)
+- ashby `mumzworld` (Mumzworld): 404 (no such board)
+- ashby `n8n` (n8n): no Saudi jobs now
+- ashby `nomic.ai` (Nomic): no Saudi jobs now
+- ashby `noon` (noon): 404 (no such board)
+- ashby `notion` (Notion): no Saudi jobs now
+- ashby `nymcard` (nymcard): 404 (no such board)
+- ashby `openai` (OpenAI): error response too large
+- ashby `paymob` (Paymob): 404 (no such board)
+- ashby `paytabs` (paytabs): 404 (no such board)
+- ashby `perplexity` (Perplexity): no Saudi jobs now
+- ashby `posthog` (PostHog): no Saudi jobs now
+- ashby `propertyfinder` (Property Finder): 404 (no such board)
+- ashby `ramp` (Ramp): no Saudi jobs now
+- ashby `redesignhealth` (Redesign Health): 404 (no such board)
+- ashby `replit` (replit): no Saudi jobs now
+- ashby `rewaa` (Rewaa): 404 (no such board)
+- ashby `rippling` (Rippling): 404 (no such board)
+- ashby `salla` (Salla): 404 (no such board)
+- ashby `snowflake` (Snowflake): no Saudi jobs now
+- ashby `supabase` (Supabase): no Saudi jobs now
+- ashby `swvl` (Swvl): 404 (no such board)
+- ashby `sylndr` (Sylndr): 404 (no such board)
+- ashby `tabby` (Tabby): 404 (no such board)
+- ashby `tamara` (Tamara): 404 (no such board)
+- ashby `tap` (tap): 404 (no such board)
+- ashby `tappayments` (tappayments): 404 (no such board)
+- ashby `vercel` (vercel): no Saudi jobs now
+- ashby `wand-ai` (Wand AI): no Saudi jobs now
+- ashby `wego` (Wego): 404 (no such board)
+- ashby `zid` (Zid): 404 (no such board)
+- ashby `ziina` (Ziina): no Saudi jobs now
+- greenhouse `accenture` (Accenture): 404 (no such board)
+- greenhouse `accesso` (accesso): no Saudi jobs now
+- greenhouse `accor` (Accor): 404 (no such board)
+- greenhouse `adyen` (adyen): no Saudi jobs now
+- greenhouse `agoda` (Agoda): no Saudi jobs now
+- greenhouse `airbnb` (Airbnb): no Saudi jobs now
+- greenhouse `airwallex` (Airwallex): 404 (no such board)
+- greenhouse `akamai` (akamai): 404 (no such board)
+- greenhouse `algolia` (algolia): no Saudi jobs now
+- greenhouse `amplitude` (amplitude): 404 (no such board)
+- greenhouse `anduril` (Anduril): 404 (no such board)
+- greenhouse `appian` (Appian): no Saudi jobs now
+- greenhouse `armis` (Armis): 404 (no such board)
+- greenhouse `bain` (Bain): 404 (no such board)
+- greenhouse `bayut` (Bayut): 404 (no such board)
+- greenhouse `bcg` (BCG): 404 (no such board)
+- greenhouse `bitpanda` (Bitpanda): no Saudi jobs now
+- greenhouse `blast` (BLAST): 404 (no such board)
+- greenhouse `booking` (Booking.com): 404 (no such board)
+- greenhouse `braze` (braze): no Saudi jobs now
+- greenhouse `bybit` (Bybit): no Saudi jobs now
+- greenhouse `c3iot` (c3iot): no Saudi jobs now
+- greenhouse `canonical` (Canonical): no Saudi jobs now
+- greenhouse `canonicaljobs` (Canonical): 404 (no such board)
+- greenhouse `careem` (Careem): no Saudi jobs now
+- greenhouse `careemnow` (careemnow): 404 (no such board)
+- greenhouse `ceer` (Ceer): 404 (no such board)
+- greenhouse `celonis` (Celonis): no Saudi jobs now
+- greenhouse `cerebrassystems` (cerebrassystems): 404 (no such board)
+- greenhouse `chainalysis` (Chainalysis): 404 (no such board)
+- greenhouse `checkout` (Checkout.com): 404 (no such board)
+- greenhouse `checkoutcom` (Checkout.com): 404 (no such board)
+- greenhouse `claroty` (Claroty): 404 (no such board)
+- greenhouse `cloudflare` (Cloudflare): no Saudi jobs now
+- greenhouse `cognyte` (Cognyte): 404 (no such board)
+- greenhouse `coinbase` (Coinbase): no Saudi jobs now
+- greenhouse `collibra` (collibra): no Saudi jobs now
+- greenhouse `commvault` (Commvault): no Saudi jobs now
+- greenhouse `confluent` (Confluent): 404 (no such board)
+- greenhouse `contentful` (contentful): no Saudi jobs now
+- greenhouse `coreweave` (coreweave): no Saudi jobs now
+- greenhouse `crfamilyofcompanies` (Copper River Family of Companies): no Saudi jobs now
+- greenhouse `crowdstrike` (CrowdStrike): 404 (no such board)
+- greenhouse `cyberark` (cyberark): 404 (no such board)
+- greenhouse `cyera` (Cyera): 404 (no such board)
+- greenhouse `darktrace` (darktrace): 404 (no such board)
+- greenhouse `dataiku` (Dataiku): no Saudi jobs now
+- greenhouse `datarobot` (datarobot): 404 (no such board)
+- greenhouse `delinea` (delinea): 404 (no such board)
+- greenhouse `deliveroo` (deliveroo): no Saudi jobs now
+- greenhouse `dragos` (Dragos): no Saudi jobs now
+- greenhouse `dubizzlegroup` (dubizzle Group): 404 (no such board)
+- greenhouse `dynatrace` (Dynatrace): 404 (no such board)
+- greenhouse `envoyglobalinc` (Envoy Global): no Saudi jobs now
+- greenhouse `epam` (EPAM): 404 (no such board)
+- greenhouse `eslfaceitgroup` (ESL FACEIT Group): 404 (no such board)
+- greenhouse `expedia` (Expedia): 404 (no such board)
+- greenhouse `expensify` (expensify): 404 (no such board)
+- greenhouse `f5` (f5): 404 (no such board)
+- greenhouse `figma` (Figma): no Saudi jobs now
+- greenhouse `forescout` (forescout): 404 (no such board)
+- greenhouse `fortinet` (Fortinet): 404 (no such board)
+- greenhouse `geidea` (Geidea): 404 (no such board)
+- greenhouse `generalassembly` (General Assembly): no Saudi jobs now
+- greenhouse `genesys` (Genesys): 404 (no such board)
+- greenhouse `geniussportssn` (Genius Sports Statistician Network): no Saudi jobs now
+- greenhouse `getir` (getir): 404 (no such board)
+- greenhouse `group-ib` (Group-IB): 404 (no such board)
+- greenhouse `hala` (HALA): 404 (no such board)
+- greenhouse `hibob` (hibob): 404 (no such board)
+- greenhouse `hubspot` (HubSpot): 404 (no such board)
+- greenhouse `humain` (HUMAIN): 404 (no such board)
+- greenhouse `illumio` (illumio): 404 (no such board)
+- greenhouse `imperva` (Imperva): 404 (no such board)
+- greenhouse `intercom` (intercom): no Saudi jobs now
+- greenhouse `journey` (Journey): no Saudi jobs now
+- greenhouse `kaspersky` (Kaspersky): 404 (no such board)
+- greenhouse `kearney` (Kearney): 404 (no such board)
+- greenhouse `kitopi` (Kitopi): 404 (no such board)
+- greenhouse `lambda` (lambda): 404 (no such board)
+- greenhouse `mapbox` (mapbox): 404 (no such board)
+- greenhouse `marriott` (Marriott): 404 (no such board)
+- greenhouse `mckinsey` (McKinsey): 404 (no such board)
+- greenhouse `mongodb` (MongoDB): no Saudi jobs now
+- greenhouse `mongodb1` (MongoDB): 404 (no such board)
+- greenhouse `mumzworld` (Mumzworld): 404 (no such board)
+- greenhouse `nansen` (Nansen): 404 (no such board)
+- greenhouse `neom` (NEOM): 404 (no such board)
+- greenhouse `netapp` (NetApp): 404 (no such board)
+- greenhouse `netskope` (netskope): no Saudi jobs now
+- greenhouse `newlabcareers` (Newlab): no Saudi jobs now
+- greenhouse `newrelic` (New Relic): no Saudi jobs now
+- greenhouse `nium` (nium): 404 (no such board)
+- greenhouse `noon` (noon): 404 (no such board)
+- greenhouse `nutanix` (Nutanix): 404 (no such board)
+- greenhouse `nymcard` (nymcard): 404 (no such board)
+- greenhouse `okta` (Okta): no Saudi jobs now
+- greenhouse `okx` (OKX): no Saudi jobs now
+- greenhouse `oliverwyman` (Oliver Wyman): 404 (no such board)
+- greenhouse `oysterhr` (oysterhr): 404 (no such board)
+- greenhouse `paloaltonetworks` (Palo Alto Networks): 404 (no such board)
+- greenhouse `papayaglobal` (papayaglobal): 404 (no such board)
+- greenhouse `payoneer` (payoneer): no Saudi jobs now
+- greenhouse `paytabs` (paytabs): 404 (no such board)
+- greenhouse `personio` (personio): 404 (no such board)
+- greenhouse `prolific` (Prolific): no Saudi jobs now
+- greenhouse `propertyfinder` (Property Finder): 404 (no such board)
+- greenhouse `propertyfinder1` (Property Finder): 404 (no such board)
+- greenhouse `rain` (Rain): 404 (no such board)
+- greenhouse `rapid7` (Rapid7): 404 (no such board)
+- greenhouse `rapyd` (rapyd): 404 (no such board)
+- greenhouse `recordedfuture` (Recorded Future): no Saudi jobs now
+- greenhouse `remotecom` (remotecom): no Saudi jobs now
+- greenhouse `revolut` (Revolut): 404 (no such board)
+- greenhouse `riotgames` (Riot Games): no Saudi jobs now
+- greenhouse `ripple` (Ripple): no Saudi jobs now
+- greenhouse `rippling` (Rippling): 404 (no such board)
+- greenhouse `roblox` (Roblox): no Saudi jobs now
+- greenhouse `sailpoint` (sailpoint): 404 (no such board)
+- greenhouse `salesforce` (Salesforce): 404 (no such board)
+- greenhouse `sambanova` (sambanova): 404 (no such board)
+- greenhouse `samsara` (Samsara): no Saudi jobs now
+- greenhouse `samsara1` (samsara1): 404 (no such board)
+- greenhouse `savvygamesgroup` (Savvy Games Group): 404 (no such board)
+- greenhouse `scopely` (Scopely): no Saudi jobs now
+- greenhouse `sentinelone` (SentinelOne): 404 (no such board)
+- greenhouse `servicenow` (ServiceNow): 404 (no such board)
+- greenhouse `snowflake` (Snowflake): 404 (no such board)
+- greenhouse `sprinklr` (Sprinklr): 404 (no such board)
+- greenhouse `stripe` (Stripe): no Saudi jobs now
+- greenhouse `sumologic` (sumologic): no Saudi jobs now
+- greenhouse `swvl` (Swvl): 404 (no such board)
+- greenhouse `sylndr` (Sylndr): 404 (no such board)
+- greenhouse `tabby` (Tabby): 404 (no such board)
+- greenhouse `tabbyai` (Tabby): 404 (no such board)
+- greenhouse `talabat` (talabat): 404 (no such board)
+- greenhouse `tanium` (tanium): no Saudi jobs now
+- greenhouse `techstars57` (Techstars): no Saudi jobs now
+- greenhouse `tenable` (Tenable): 404 (no such board)
+- greenhouse `tenstorrent` (tenstorrent): no Saudi jobs now
+- greenhouse `toptal` (Toptal): 404 (no such board)
+- greenhouse `twilio` (Twilio): no Saudi jobs now
+- greenhouse `unity3d` (Unity): 404 (no such board)
+- greenhouse `vastdata` (vastdata): 404 (no such board)
+- greenhouse `vectraai` (vectraai): 404 (no such board)
+- greenhouse `vercel` (Vercel): no Saudi jobs now
+- greenhouse `weka` (weka): 404 (no such board)
+- greenhouse `wise` (Wise): no Saudi jobs now
+- greenhouse `wiz` (Wiz): 404 (no such board)
+- greenhouse `ziina` (Ziina): 404 (no such board)
+- greenhouse `zscaler` (Zscaler): no Saudi jobs now
+- lever `aeratechnology` (Aera Technology): no Saudi jobs now
+- lever `binance` (Binance): no Saudi jobs now
+- lever `bluecatnetworks` (BlueCat): no Saudi jobs now
+- lever `calo` (Calo): 404 (no such board)
+- lever `careem` (Careem): 404 (no such board)
+- lever `careem-1` (careem-1): 404 (no such board)
+- lever `cognite` (Cognite): 404 (no such board)
+- lever `dlocal` (dLocal): no Saudi jobs now
+- lever `dubizzle` (dubizzle / Bayut): 404 (no such board)
+- lever `economicmodeling` (Lightcast): no Saudi jobs now
+- lever `extremenetworks` (Extreme Networks): no Saudi jobs now
+- lever `floward` (Floward): 404 (no such board)
+- lever `foodics` (Foodics): 404 (no such board)
+- lever `geidea` (Geidea): 404 (no such board)
+- lever `getir` (getir): 404 (no such board)
+- lever `hyperpay` (HyperPay): 404 (no such board)
+- lever `incorta` (Incorta): no Saudi jobs now
+- lever `jahez` (Jahez): 404 (no such board)
+- lever `kearney` (Kearney): 404 (no such board)
+- lever `kitopi` (Kitopi): 404 (no such board)
+- lever `kitopi-1` (kitopi-1): 404 (no such board)
+- lever `kpler` (Kpler): no Saudi jobs now
+- lever `lean-technologies` (Lean Technologies): 404 (no such board)
+- lever `lendo` (Lendo): 404 (no such board)
+- lever `lucidya` (Lucidya): 404 (no such board)
+- lever `matterport` (Matterport): 404 (no such board)
+- lever `moyasar` (Moyasar): 404 (no such board)
+- lever `mozn` (Mozn): 404 (no such board)
+- lever `mrsool` (Mrsool): 404 (no such board)
+- lever `nana` (Nana): 404 (no such board)
+- lever `noon` (noon): 404 (no such board)
+- lever `noon-com` (noon-com): 404 (no such board)
+- lever `nymcard` (nymcard): 404 (no such board)
+- lever `okx` (OKX): 404 (no such board)
+- lever `palantir` (palantir): no Saudi jobs now
+- lever `paymob` (Paymob): 404 (no such board)
+- lever `paytabs` (paytabs): 404 (no such board)
+- lever `picus` (Picus Security): no Saudi jobs now
+- lever `propertyfinder` (Property Finder): 404 (no such board)
+- lever `rewaa` (Rewaa): 404 (no such board)
+- lever `rolandberger` (Roland Berger): 404 (no such board)
+- lever `sabre` (Sabre): 404 (no such board)
+- lever `sanabil` (Sanabil): 404 (no such board)
+- lever `sary` (Sary): 404 (no such board)
+- lever `scaleway` (Scaleway): no Saudi jobs now
+- lever `spotify` (Spotify): no Saudi jobs now
+- lever `stv` (STV): 404 (no such board)
+- lever `swvl` (Swvl): 404 (no such board)
+- lever `sylndr` (Sylndr): 404 (no such board)
+- lever `tabby` (Tabby): 404 (no such board)
+- lever `tabby-ai` (tabby-ai): 404 (no such board)
+- lever `talabat` (talabat): 404 (no such board)
+- lever `tamara` (Tamara): 404 (no such board)
+- lever `tamatem` (Tamatem): 404 (no such board)
+- lever `tap` (tap): 404 (no such board)
+- lever `thndr` (Thndr): 404 (no such board)
+- lever `tsmg` (tsmg): FetchError The read operation timed out
+- lever `tweeq` (Tweeq): 404 (no such board)
+- lever `unifonic` (Unifonic): 404 (no such board)
+- lever `valtech` (Valtech): 404 (no such board)
+- lever `veeva` (veeva): no Saudi jobs now
+- lever `wego` (Wego): 404 (no such board)
+- lever `whoop` (Whoop): no Saudi jobs now
+- lever `xm` (XM): no Saudi jobs now
+- lever `Yassir` (Yassir): no Saudi jobs now
+- lever `zid` (Zid): 404 (no such board)
+- recruitee `astrolabs` (AstroLabs): 404 (no such board)
+- recruitee `kuoksingaporelimited` (Kuok Group): 404 (no such board)
+- recruitee `mdlbeast` (MDLBEAST): no Saudi jobs now
+- recruitee `siwaresystems` (Si-Ware Systems): no Saudi jobs now
+- recruitee `zira` (ZIRA): no Saudi jobs now
+- workable `abwab` (Abwab): 404 (no such board)
+- workable `acs-sa` (Arabic Computer Systems): no Saudi jobs now
+- workable `alaqtar` (ALAQTAR): no Saudi jobs now
+- workable `amoda` (AMODA): no Saudi jobs now
+- workable `arabybrand` (ArabyBrand): no Saudi jobs now
+- workable `arvo` (ARVO): no Saudi jobs now
+- workable `barq` (Barq): no Saudi jobs now
+- workable `barq-1` (Barq): no Saudi jobs now
+- workable `baseer` (Baseer): 404 (no such board)
+- workable `brightcomgroup` (Brightcom): 404 (no such board)
+- workable `calo` (Calo): no Saudi jobs now
+- workable `careem` (careem): no Saudi jobs now
+- workable `careersaudia` (CareerSaudia): no Saudi jobs now
+- workable `ccds` (CCDS): no Saudi jobs now
+- workable `cura` (Cura): no Saudi jobs now
+- workable `durrah` (Durrah Advanced Development): no Saudi jobs now
+- workable `efg` (ESL FACEIT Group): no Saudi jobs now
+- workable `ejar` (Ejar): 404 (no such board)
+- workable `equalteaching` (Equal Teaching): no Saudi jobs now
+- workable `fgc` (FGC): no Saudi jobs now
+- workable `floward` (Floward): no Saudi jobs now
+- workable `floward-1` (Floward): no Saudi jobs now
+- workable `geidea` (Geidea): no Saudi jobs now
+- workable `golden-elite-catering-services` (Golden Elite Catering Services): no Saudi jobs now
+- workable `hakbah` (Hakbah): no Saudi jobs now
+- workable `hala` (HALA): no Saudi jobs now
+- workable `huggingface` (huggingface): no Saudi jobs now
+- workable `hungerstation` (HungerStation): no Saudi jobs now
+- workable `hyperpay` (HyperPay): 404 (no such board)
+- workable `imetric` (iMetric): 404 (no such board)
+- workable `intdv` (INTDV): no Saudi jobs now
+- workable `ista-2` (ISTA Personnel Solutions): no Saudi jobs now
+- workable `jahez` (Jahez): no Saudi jobs now
+- workable `jahez-1` (Jahez): 404 (no such board)
+- workable `kitopi` (kitopi): no Saudi jobs now
+- workable `leadvy` (LeadVy): no Saudi jobs now
+- workable `lean` (Lean Technologies): no Saudi jobs now
+- workable `lendo` (Lendo): no Saudi jobs now
+- workable `lvis-team` (LVIS (Neuvera)): no Saudi jobs now
+- workable `matar-al-baqmi-holding-company` (Matar Al Baqmi Holding): 404 (no such board)
+- workable `matar-holding` (Matar Holding): no Saudi jobs now
+- workable `moyasar` (Moyasar): 404 (no such board)
+- workable `mozn` (Mozn): no Saudi jobs now
+- workable `mrsool` (Mrsool): no Saudi jobs now
+- workable `msr-fsr` (MSR-FSR): no Saudi jobs now
+- workable `mumzworld` (Mumzworld): no Saudi jobs now
+- workable `nana` (Nana): no Saudi jobs now
+- workable `nana-1` (Nana): no Saudi jobs now
+- workable `nash` (Nash): no Saudi jobs now
+- workable `noon` (noon): no Saudi jobs now
+- workable `nuqtah` (Nuqtah): 404 (no such board)
+- workable `nymcard` (nymcard): 404 (no such board)
+- workable `paytabs` (paytabs): 404 (no such board)
+- workable `pointr` (Pointr): no Saudi jobs now
+- workable `pprpo` (PrimeRPO): no Saudi jobs now
+- workable `premium-solutions-consultancy` (Premium Solutions Consultancy): no Saudi jobs now
+- workable `property-finder` (property-finder): no Saudi jobs now
+- workable `qiddiya-investment-company` (Qiddiya Investment Company): no Saudi jobs now
+- workable `qoyod` (Qoyod): no Saudi jobs now
+- workable `raedventures` (Raed Ventures): 404 (no such board)
+- workable `rasan` (Rasan): no Saudi jobs now
+- workable `remote-recruitment` (Remote Recruitment): no Saudi jobs now
+- workable `resal` (Resal): no Saudi jobs now
+- workable `retal` (Retal): no Saudi jobs now
+- workable `rewaa` (Rewaa): 404 (no such board)
+- workable `rgheeb-1` (Rgheeb): 404 (no such board)
+- workable `sadu` (Sadu): 404 (no such board)
+- workable `sahl` (Sahl): 404 (no such board)
+- workable `sanabil` (Sanabil Investments): 404 (no such board)
+- workable `sary` (Sary): no Saudi jobs now
+- workable `sary-1` (Sary): no Saudi jobs now
+- workable `som-medical-recruitment` (SOM Medical Recruitment): no Saudi jobs now
+- workable `stv` (STV): no Saudi jobs now
+- workable `tabby` (Tabby): no Saudi jobs now
+- workable `tabby-1` (Tabby): no Saudi jobs now
+- workable `tahakom` (Tahakom): no Saudi jobs now
+- workable `tajalla` (Tajalla): no Saudi jobs now
+- workable `tajalla-agency` (Tajalla Agency): no Saudi jobs now
+- workable `takamol` (Takamol): no Saudi jobs now
+- workable `talabat` (talabat): no Saudi jobs now
+- workable `tam-development-co` (TAM Development): no Saudi jobs now
+- workable `tamara-1` (tamara-1): no Saudi jobs now
+- workable `tamatem` (Tamatem): no Saudi jobs now
+- workable `tamatem-games` (Tamatem): no Saudi jobs now
+- workable `tamheer` (Tamheer): 404 (no such board)
+- workable `tap-payments` (tap-payments): 404 (no such board)
+- workable `telfaz11` (Telfaz11): no Saudi jobs now
+- workable `thiqah` (Thiqah): no Saudi jobs now
+- workable `thmanyah` (Thmanyah): no Saudi jobs now
+- workable `tweeq` (Tweeq): 404 (no such board)
+- workable `ubrand` (UBRAND Advertising): no Saudi jobs now
+- workable `unifonic` (Unifonic): no Saudi jobs now
+- workable `v3-middle-east-engineering-consultants` (V3 Middle East Engineering Consultants): no Saudi jobs now
+- workable `vezeeta` (Vezeeta): no Saudi jobs now
+- workable `wafeq` (Wafeq): 404 (no such board)
+- workable `wahed` (Wahed): 404 (no such board)
+- workable `webook-com` (webook.com): 404 (no such board)
+- workable `zhejiang-dingli-machinery-co-dot-ltd` (Zhejiang Dingli Machinery): no Saudi jobs now
+- workable `zid` (Zid): no Saudi jobs now
+- workable `zid-1` (Zid): 404 (no such board)
+- workable `ziina` (Ziina): 404 (no such board)
+- greenhouse `hala` (HALA): 404 on the API and on job-boards.greenhouse.io/hala (board removed)
+- ashby `redesignhealth`: 404; the working board is `Redesign Health` (with the space)
+- lever `tsmg` (TSMG): over 5 MiB, and the paged re-check timed out; not verified
+- smartrecruiters (all slugs): robots.txt disallows `RizqJobsBot`; not checked

@@ -1,0 +1,461 @@
+{
+  "checked_on": "2026-11-07",
+  "entries": [
+    {
+      "name": "جامعة الملك عبدالله للعلوم والتقنية",
+      "name_en": "KAUST",
+      "group": "gov",
+      "enabled": true,
+      "ats": "sf_csb",
+      "url": "https://careers.kaust.edu.sa",
+      "jobs_now": 8,
+      "_note": "SAP SuccessFactors Career Site Builder (classic tr.data-row table). The RSS feed under /services/ is disallowed by robots; the /search/ table is allowed. Tested 2026-11-07."
+    },
+    {
+      "name": "هيئة الزكاة والضريبة والجمارك",
+      "name_en": "ZATCA",
+      "group": "gov",
+      "enabled": true,
+      "ats": "html",
+      "urls": [
+        "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=0",
+        "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=5",
+        "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=10",
+        "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=15"
+      ],
+      "url": "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=0",
+      "card": {
+        "tag": "li",
+        "cls": "job-tile"
+      },
+      "title": {
+        "tag": "a",
+        "cls": "jobTitle-link"
+      },
+      "jobs_now": 6,
+      "_note": "SAP SuccessFactors CSB with the newer tile layout (li.job-tile). The sf_csb adapter cannot read that layout, so this entry uses the html adapter. 5 jobs per page, hence startrow 0/5/10/15. RSS is disallowed by robots. Titles are in English; the city appears in the URL slug (Riyadh)."
+    },
+    {
+      "name": "هيئة الحكومة الرقمية",
+      "name_en": "Digital Government Authority (DGA)",
+      "group": "gov",
+      "enabled": true,
+      "ats": "rendered",
+      "url": "https://career.dga.gov.sa/ar/job-search-results/",
+      "link_contains": "/jobs/",
+      "jobs_now": 1,
+      "_note": "Talentera (Bayt). Job links are now /<country>/jobs/<slug>-<id>/, not jb_id=. Today's only post is a coop training post."
+    },
+    {
+      "name": "وزارة الاستثمار",
+      "name_en": "Ministry of Investment (MISA)",
+      "group": "gov",
+      "enabled": true,
+      "ats": "sf_csb",
+      "url": "https://jobs.misa.gov.sa",
+      "locale": "ar_SA",
+      "jobs_now": 0,
+      "_note": "SAP SuccessFactors CSB. The portal works; 0 open jobs today (it shows the noresults block)."
+    },
+    {
+      "name": "وزارة الخارجية",
+      "name_en": "Ministry of Foreign Affairs",
+      "group": "gov",
+      "enabled": true,
+      "ats": "oracle",
+      "host": "fa-eviv-saasfaprod1.fa.ocs.oraclecloud.com",
+      "site": "CX_4003",
+      "job_base": "https://fa-eviv-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/ar/sites/CX_4003/job/",
+      "jobs_now": 0,
+      "_note": "Oracle Recruiting Cloud behind the vanity domain jobs.mofa.gov.sa (site CX_4003). The REST API works; TotalJobsCount=0 today."
+    },
+    {
+      "name": "الهيئة السعودية للسياحة",
+      "name_en": "Saudi Tourism Authority",
+      "group": "gov",
+      "enabled": true,
+      "ats": "oracle",
+      "host": "fa-esiv-saasfaprod1.fa.ocs.oraclecloud.com",
+      "site": "CX_1",
+      "job_base": "https://fa-esiv-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/ar/sites/CX_1/job/",
+      "jobs_now": 0,
+      "_note": "Oracle Recruiting Cloud, linked from sta.gov.sa/ar/main-career-page. The REST API works; 0 jobs today."
+    }
+  ],
+  "needs_adapter": [
+    {
+      "name": "جدارات - القطاع العام وشبه الحكومي والتعاقدي",
+      "name_en": "Jadarat public-sector tabs",
+      "why": "Biggest gap. The jadarat collector reads only ExploreJobs (= JobTab=1, القطاع الخاص), and all 1292 Jadarat jobs in the store are 'القطاع الخاص'. Civil-service, semi-government and contract jobs sit on separate tabs that we never open, so no government entity is covered via Jadarat today.",
+      "endpoint": [
+        "https://jadarat.sa/Jadarat/ExploreJobs?JobTab=2  (وظائف الخدمة المدنية)",
+        "https://jadarat.sa/Jadarat/ExploreJobs?JobTab=3  (وظائف القطاع شبه الحكومي)",
+        "https://jadarat.sa/Jadarat/ExploreJobs?JobTab=4  (الوظائف التعاقدية)"
+      ],
+      "method": "Render with Playwright exactly as jadarat.collect does. LINK_SEL, CARDS_JS and parse_card all work on these tabs (tested). The only change is a JobTab parameter, or a loop over the tabs with a few pages each. The page gets its data from the internal screenservices/UEP_CW/PublicJobs_CW/PublicList/DataActionGetData; do NOT call that directly. Read the rendered page.",
+      "payload": null,
+      "fields": [
+        "title",
+        "company (line 2 of card)",
+        "city",
+        "sector ('القطاع شبه الحكومي' etc.)",
+        "contract",
+        "posted_date (Hijri)",
+        "url JobDetails?Param=..."
+      ],
+      "empty_state": "'نأسف، لا توجد أي وظائف متاحة في الوقت الحالي' with a '0 وظيفة' header. Tabs 2 and 4 are empty today: civil-service jobs open in announcement windows.",
+      "jobs_now": {
+        "JobTab=1 private": 6884,
+        "JobTab=2 civil service": 0,
+        "JobTab=3 semi-government": 4,
+        "JobTab=4 contract": 0
+      },
+      "sample": [
+        {
+          "title": "جيولوجي بحري",
+          "company": "هيئة المساحة الجيولوجية السعودية",
+          "city": "جدة",
+          "sector": "القطاع شبه الحكومي",
+          "posted_date": "2026-09-11"
+        },
+        {
+          "title": "مدير إدارة المخاطر و ...",
+          "company": "المركز الوطني لكفاءة وترشيد المياه",
+          "city": "الرياض",
+          "sector": "القطاع شبه الحكومي",
+          "posted_date": "2026-10-22"
+        },
+        {
+          "title": "ميكانيكي طائرات",
+          "company": "الخطوط الجوية العربية السعودية",
+          "city": "جدة",
+          "sector": "القطاع شبه الحكومي",
+          "posted_date": "2026-11-06"
+        }
+      ]
+    },
+    {
+      "name": "الهيئة السعودية للبيانات والذكاء الاصطناعي",
+      "name_en": "SDAIA",
+      "careers_url": "https://careers.sdaia.gov.sa/jobs",
+      "why": "Custom Vue portal with a public JSON search API; the list needs no login. robots.txt allows it. 0 jobs today ('لا توجد وظائف').",
+      "endpoint": "https://careers.sdaia.gov.sa/api/jobs/search",
+      "method": "POST JSON via base.fetch_json(url, payload=...)",
+      "payload": {
+        "search": "",
+        "pageNumber": 1,
+        "pSize": 50,
+        "QualificationKeys": "",
+        "employmentTypeKeys": "",
+        "jobLocationKeys": "",
+        "ExperienceRange": [
+          0,
+          30
+        ]
+      },
+      "fields": {
+        "list": "data[]",
+        "total": "totalCount",
+        "per_job": [
+          "objectKey",
+          "jobNumber",
+          "jobTitleNameAr",
+          "jobTitleNameEn",
+          "workLocationNameAr",
+          "workLocationNameEn",
+          "qualificationsNameAr",
+          "minExperience",
+          "maxExperience",
+          "publishDaysCount"
+        ],
+        "job_url": "https://careers.sdaia.gov.sa/job/{objectKey}",
+        "detail_api": "GET https://careers.sdaia.gov.sa/api/jobs/{objectKey}"
+      },
+      "sample": {
+        "data": [],
+        "totalCount": 0,
+        "pageNumber": 0,
+        "pageSize": 0,
+        "statusCode": 0
+      },
+      "jobs_now": 0
+    },
+    {
+      "name": "وزارة الدفاع",
+      "name_en": "Ministry of Defense",
+      "careers_url": "https://jobs.mod.gov.sa/jobs",
+      "why": "Own server-rendered ASP.NET portal, allowed by robots; the list needs no login. Today it shows 'لا يوجد وظائف حاليا', so the card markup cannot be written into an html spec yet. Re-check when a post appears, then add an 'html' entry. Military enlistment is separate: tajnid.mod.gov.sa, in seasonal windows.",
+      "endpoint": "https://jobs.mod.gov.sa/jobs",
+      "method": "GET (plain HTML)",
+      "payload": null,
+      "fields": "unknown until a post exists; empty state is div.alert.alert-light",
+      "sample": "لا يوجد وظائف حاليا",
+      "jobs_now": 0
+    },
+    {
+      "name": "وزارة الشؤون الإسلامية والدعوة والإرشاد",
+      "name_en": "Ministry of Islamic Affairs",
+      "careers_url": "https://www.moia.gov.sa/career/Pages/Default.aspx",
+      "why": "Own SharePoint portal 'منصة التوظيف' with a 'الوظائف المتاحة' section that lists posts only while an application window is open. Today it says 'نفيدكم بإنتهاء الفترة المخصصة للتقديم على الوظائف'. Selectors can be set once a window opens.",
+      "endpoint": "https://www.moia.gov.sa/career/Pages/Default.aspx",
+      "method": "GET (server-rendered SharePoint)",
+      "payload": null,
+      "fields": "unknown until a window opens",
+      "sample": "انتهاء الفترة المخصصة للتقديم",
+      "jobs_now": 0
+    },
+    {
+      "name": "SuccessFactors CSB tile layout (sf_csb extension)",
+      "name_en": "sf_csb tile layout",
+      "why": "ZATCA (and likely other CSB tenants) renders li.job-tile[data-url] with a.jobTitle-link instead of tr.data-row, so sf_csb returns 0 for it. The html entry above covers ZATCA. A small sf_csb fallback would cover every tile-layout tenant: read li.job-tile when no tr.data-row is found, with a page size of data-per-page.",
+      "endpoint": "https://careers.zatca.gov.sa/search/?q=&locale=ar_SA&startrow=N",
+      "method": "GET (HTML)",
+      "payload": null,
+      "fields": [
+        "li.job-tile@data-url",
+        "a.jobTitle-link (title, href)",
+        "ul[data-per-page] (page size)"
+      ],
+      "sample": {
+        "title": "Refund Lead Auditor",
+        "url": "https://careers.zatca.gov.sa/job/Riyadh-Refund-Lead-Auditor/857380923/"
+      },
+      "jobs_now": 6
+    }
+  ],
+  "via_jadarat": [
+    {
+      "name": "وزارة الموارد البشرية والتنمية الاجتماعية",
+      "name_en": "Ministry of Human Resources and Social Development (HRSD)",
+      "careers_url": "https://www.hrsd.gov.sa/ministry/about-ministry/jobs",
+      "reason": "The jobs page points to Jadarat; it has no listing of its own (earlier check, unchanged).",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الصحة",
+      "name_en": "Ministry of Health",
+      "careers_url": "https://www.moh.gov.sa/",
+      "reason": "No careers listing on moh.gov.sa. Civil-service health jobs go through the Jadarat civil-service tab; cluster jobs go through Health Holding (الصحة القابضة), a separate route.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة التعليم",
+      "name_en": "Ministry of Education",
+      "careers_url": "https://moe.gov.sa/",
+      "reason": "Teacher and civil-service jobs are announced through Jadarat (civil-service tab), in windows.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة المالية",
+      "name_en": "Ministry of Finance",
+      "careers_url": "https://www.mof.gov.sa/ar/employment",
+      "reason": "The employment page points to Jadarat; hr.mof.gov.sa is an internal HR system.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة العدل",
+      "name_en": "Ministry of Justice",
+      "careers_url": "https://www.moj.gov.sa/",
+      "reason": "No careers page; jobs are announced through Jadarat.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الاقتصاد والتخطيط",
+      "name_en": "Ministry of Economy and Planning",
+      "careers_url": "https://mep.gov.sa/ar",
+      "reason": "SPA with no careers section; no careers.* or jobs.* host.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الطاقة",
+      "name_en": "Ministry of Energy",
+      "careers_url": "https://www.moenergy.gov.sa/en/energy-talent-community",
+      "reason": "Talent-community sign-up only; no listing.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة البلديات والإسكان",
+      "name_en": "Ministry of Municipalities and Housing",
+      "careers_url": "https://momah.gov.sa/ar/node/14717",
+      "reason": "The employment page points to Jadarat.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة البيئة والمياه والزراعة",
+      "name_en": "Ministry of Environment, Water and Agriculture",
+      "careers_url": "https://www.mewa.gov.sa/ar/Ministry/AboutMinistry/Employment",
+      "reason": "The employment page points to Jadarat; hr.mewa.gov.sa is internal.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة النقل والخدمات اللوجستية",
+      "name_en": "Ministry of Transport and Logistic Services",
+      "careers_url": "https://mot.gov.sa/ar/employment1",
+      "reason": "The employment page points to Jadarat.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الاتصالات وتقنية المعلومات",
+      "name_en": "Ministry of Communications and IT (MCIT)",
+      "careers_url": "https://jadarat.sa/",
+      "reason": "The careers link redirects straight to Jadarat. Today its jobs reach us only as aggregator and Telegram reposts (4 in store).",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الإعلام",
+      "name_en": "Ministry of Media",
+      "careers_url": "https://media.gov.sa/ar/about/careers",
+      "reason": "The careers page points to Jadarat.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "وزارة الحج والعمرة",
+      "name_en": "Ministry of Hajj and Umrah",
+      "careers_url": "https://haj.gov.sa/en/About-the-ministry/Jobs",
+      "reason": "The jobs page has no listing.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "هيئة السوق المالية",
+      "name_en": "Capital Market Authority (CMA)",
+      "careers_url": "https://cma.org.sa/",
+      "reason": "cma.org.sa is reachable but has no careers listing. jobs.cma.org.sa times out, and an unreadable robots.txt counts as disallowed.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "الهيئة الوطنية للأمن السيبراني",
+      "name_en": "National Cybersecurity Authority (NCA)",
+      "careers_url": "https://nca.gov.sa/ar/careers",
+      "reason": "The careers page renders 'لا يوجد محتوى'; no ATS link.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "هيئة تقويم التعليم والتدريب",
+      "name_en": "Education and Training Evaluation Commission (ETEC)",
+      "careers_url": "https://etec.gov.sa/ar/jobs",
+      "reason": "The jobs page links only to its Jadarat entity profile (jadarat.sa/EntityProfile?...).",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "الهيئة الملكية لمدينة الرياض",
+      "name_en": "Royal Commission for Riyadh City (RCRC)",
+      "careers_url": "https://www.rcrc.gov.sa/careers/",
+      "reason": "The careers portal (Angular) offers only general 'قدم الآن' paths (experienced, new graduates, coop); it lists no posts.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "الهيئة الملكية لمحافظة العلا",
+      "name_en": "Royal Commission for AlUla (RCU)",
+      "careers_url": "https://careers.rcu.gov.sa/",
+      "reason": "The careers page says 'التقديم عبر منصة جدارات للتوظيف'. rcu.jobs.hr.cloud.sap exists, but its TLS chain fails verification, so its robots.txt is unreadable and the host counts as disallowed.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "صندوق تنمية الموارد البشرية (هدف)",
+      "name_en": "Human Resources Development Fund (HRDF)",
+      "careers_url": "https://www.hrdf.org.sa/about/joinus/jobs/",
+      "reason": "The jobs page links to Jadarat. jobs.hrdf.org.sa (Oracle EBS) disallows everything in robots.txt.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "بنك التنمية الاجتماعية",
+      "name_en": "Social Development Bank",
+      "careers_url": "https://www.sdb.gov.sa/ar/careers",
+      "reason": "The careers page points to Jadarat (earlier check).",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "صندوق التنمية العقارية",
+      "name_en": "Real Estate Development Fund (REDF)",
+      "careers_url": "https://www.redf.gov.sa/ar/careers",
+      "reason": "The careers route renders a 'not found' page; no ATS.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "جامعة الملك سعود",
+      "name_en": "King Saud University",
+      "careers_url": "https://dfpa.ksu.edu.sa/ar/jobs",
+      "reason": "The jobs pages return 404. Faculty and staff posts are announced via Jadarat and the news pages.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "جامعة الملك عبدالعزيز",
+      "name_en": "King Abdulaziz University",
+      "careers_url": "https://www.kau.edu.sa/",
+      "reason": "No careers page or ATS; hr.kau.edu.sa is an employee login.",
+      "jadarat_jobs_in_store": 0
+    },
+    {
+      "name": "جامعة الأميرة نورة بنت عبدالرحمن",
+      "name_en": "Princess Nourah University",
+      "careers_url": "https://pnu.edu.sa/ar/AboutUniversity/Pages/Careers.aspx",
+      "reason": "The careers page points to Jadarat.",
+      "jadarat_jobs_in_store": 0
+    }
+  ],
+  "unreachable": [
+    {
+      "name": "وزارة الداخلية",
+      "name_en": "Ministry of Interior",
+      "careers_url": "https://www.absher.sa/",
+      "reason": "Military and security jobs need an Absher login. jobs.moi.gov.sa times out, and an unreadable robots.txt counts as disallowed.",
+      "alternative": "Announcements on X @MOISaudiArabia, plus the aggregator and Telegram sources we already read."
+    },
+    {
+      "name": "وزارة الحرس الوطني",
+      "name_en": "Ministry of National Guard",
+      "careers_url": "https://jobs.sang.gov.sa/",
+      "reason": "Angular portal. Its only API (Request/Enrollment/Nomination...) sits behind Nafath/IAM login; there is no public job list.",
+      "alternative": "X @sanggovsa and aggregator reposts."
+    },
+    {
+      "name": "وزارة السياحة",
+      "name_en": "Ministry of Tourism",
+      "careers_url": "https://mt.gov.sa/ar/careers",
+      "reason": "Cloudflare HTTP 403 (final, not bypassed); jobs.mt.gov.sa times out.",
+      "alternative": "Jadarat public tabs and aggregators."
+    },
+    {
+      "name": "الهيئة العامة للترفيه",
+      "name_en": "General Entertainment Authority (GEA)",
+      "careers_url": "https://www.gea.gov.sa/ar/careers/",
+      "reason": "robots.txt returns HTTP 403 (Cloudflare), so the whole host counts as disallowed.",
+      "alternative": "Jadarat public tabs and aggregators."
+    },
+    {
+      "name": "الهيئة السعودية للملكية الفكرية",
+      "name_en": "Saudi Authority for Intellectual Property (SAIP)",
+      "careers_url": "https://careers.saip.gov.sa",
+      "reason": "saip.gov.sa/ar/contact-us/careers links to careers.saip.gov.sa, which closes the connection without a response (robots unreachable).",
+      "alternative": "Re-check later; Jadarat public tabs."
+    },
+    {
+      "name": "الهيئة العامة للغذاء والدواء",
+      "name_en": "Saudi Food and Drug Authority (SFDA)",
+      "careers_url": "https://www.sfda.gov.sa/ar/career-vision-and-mission",
+      "reason": "Static careers page with no listing; careers.sfda.gov.sa has an expired TLS certificate.",
+      "alternative": "Jadarat public tabs."
+    },
+    {
+      "name": "المركز الوطني للأرصاد",
+      "name_en": "National Center for Meteorology (NCM)",
+      "careers_url": "https://careers.ncm.gov.sa/",
+      "reason": "Angular SPA that loads Cloudflare Turnstile; not pursued (no challenge solving). jobs.ncm.gov.sa has a TLS hostname mismatch.",
+      "alternative": "Jadarat public tabs."
+    },
+    {
+      "name": "جامعة الملك فهد للبترول والمعادن",
+      "name_en": "KFUPM",
+      "careers_url": "https://jobs.kfupm.edu.sa/jobs/jobs-detail/staff",
+      "reason": "Posts live on ats.kfupm.edu.sa (PeopleAdmin), whose robots.txt is 'User-agent: * Disallow: /' (only Googlebot and similar bots are allowed). jobs.kfupm.edu.sa shows 2 static 'click here' links (Management Associate, Academic Assistant).",
+      "alternative": "Nothing automated; the two standing programmes could be listed by hand."
+    },
+    {
+      "name": "مدينة الملك عبدالعزيز للعلوم والتقنية",
+      "name_en": "KACST",
+      "careers_url": "https://kacst.gov.sa/careers",
+      "reason": "robots.txt returns HTTP 403, so the host counts as disallowed; no careers.* host.",
+      "alternative": "Jadarat public tabs."
+    }
+  ]
+}

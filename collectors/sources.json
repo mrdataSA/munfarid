@@ -1,0 +1,292 @@
+[
+  {
+    "key": "jadarat",
+    "name": "جدارات",
+    "type": "jadarat",
+    "pages": 40,
+    "enabled": true
+  },
+  {
+    "key": "saudijobs24",
+    "name": "وظائف السعودية 24",
+    "type": "rss",
+    "url": "https://www.saudijobs24.com/feed/",
+    "enabled": true
+  },
+  {
+    "key": "linkedksa",
+    "name": "ساحة الوظائف",
+    "type": "rss",
+    "url": "https://linkedksa.com/feed/",
+    "enabled": true,
+    "origin_from_article": true,
+    "origin_per_run": 60
+  },
+  {
+    "key": "almowaten",
+    "name": "صحيفة المواطن",
+    "type": "rss",
+    "url": "https://www.almowaten.net/feed/",
+    "category_filter": "وظائف",
+    "enabled": true,
+    "origin_from_article": true,
+    "origin_per_run": 60
+  },
+  {
+    "key": "wdeftksa",
+    "name": "وظيفتك علينا",
+    "type": "html",
+    "card": {
+      "tag": "a",
+      "cls": "wd-jobcard"
+    },
+    "title": {
+      "tag": "h3",
+      "cls": "wd-jobcard__title"
+    },
+    "link": "self",
+    "company": {
+      "tag": "li",
+      "cls": "wd-jobcard__meta-strong"
+    },
+    "location": {
+      "tag": "li",
+      "cls": "wd-jobcard__meta-location",
+      "attr": "title"
+    },
+    "date": {
+      "tag": "time",
+      "attr": "datetime"
+    },
+    "summary": "self",
+    "enabled": true,
+    "filter_jobs": false,
+    "page_url": "https://www.wdeftksa.com/sa/jobs?page={page}",
+    "pages": 3,
+    "backfill_pages": 3,
+    "max_pages": 120,
+    "jitter": 3.0,
+    "origin_from_article": true,
+    "origin_per_run": 30
+  },
+  {
+    "key": "tanqeeb",
+    "name": "تنقيب",
+    "type": "html",
+    "card": {
+      "tag": "div",
+      "cls": "search-job-card"
+    },
+    "title": {
+      "tag": "h2",
+      "cls": "search-job-title"
+    },
+    "company": {
+      "tag": "div",
+      "cls": "search-job-company-name"
+    },
+    "location": {
+      "tag": "span",
+      "cls": "search-job-workplace-location"
+    },
+    "date": {
+      "tag": "span",
+      "cls": "search-job-date"
+    },
+    "summary": "self",
+    "enabled": true,
+    "filter_jobs": false,
+    "page_url": [
+      "https://saudi.tanqeeb.com/s/jobs/IT-Jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/Sales-Jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/Logistics-Jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/Accounting-Jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/Engineering-Jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/healthcare-medical-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/administrative-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/marketing-jobs-2?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/human-resources-jobs-2?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/teaching-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/driving-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/call-center-jobs-2?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/procurement-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/industrial-jobs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/restaurants-chefs?page={page}",
+      "https://saudi.tanqeeb.com/s/jobs/women-jobs?page={page}"
+    ],
+    "pages": 1,
+    "backfill_pages": 1,
+    "max_pages": 8,
+    "jitter": 1.5
+  },
+  {
+    "key": "sabbar",
+    "name": "صبّار",
+    "type": "html",
+    "card": {
+      "tag": "div",
+      "cls": "job-card"
+    },
+    "title": {
+      "tag": "h2"
+    },
+    "link": {
+      "tag": "a"
+    },
+    "date": {
+      "tag": "div",
+      "cls": "font-small"
+    },
+    "summary": "self",
+    "enabled": true,
+    "filter_jobs": false,
+    "page_url": "https://sabbar.com/ar/jobs?page={page}",
+    "pages": 8,
+    "backfill_pages": 12,
+    "max_pages": 820,
+    "jitter": 1.5
+  },
+  {
+    "key": "rizqsa",
+    "name": "منصة رزق (rizqsa.com)",
+    "type": "ats",
+    "group": "board",
+    "per_employer": 150,
+    "enabled": true
+  },
+  {
+    "key": "telegram",
+    "name": "قنوات تيليجرام",
+    "type": "telegram",
+    "max_channels": 15,
+    "enabled": true,
+    "fast": true
+  },
+  {
+    "key": "employers",
+    "name": "بوابات الشركات الكبرى",
+    "type": "ats",
+    "group": "company",
+    "per_employer": 300,
+    "enabled": true
+  },
+  {
+    "key": "government",
+    "name": "الجهات الحكومية",
+    "type": "ats",
+    "group": "gov",
+    "per_employer": 30,
+    "enabled": true
+  },
+  {
+    "key": "linkedin",
+    "name": "LinkedIn",
+    "type": "linkedin",
+    "enabled": true,
+    "fast": true,
+    "max_pages_per_run": 25
+  },
+  {
+    "key": "careerjet",
+    "name": "Careerjet",
+    "type": "careerjet",
+    "locale": "en_SA",
+    "queries_per_run": 4,
+    "queries": [
+      {
+        "keywords": "",
+        "location": "Riyadh"
+      },
+      {
+        "keywords": "",
+        "location": "Jeddah"
+      },
+      {
+        "keywords": "",
+        "location": "Dammam"
+      },
+      {
+        "keywords": "",
+        "location": "Khobar"
+      },
+      {
+        "keywords": "",
+        "location": "Makkah"
+      },
+      {
+        "keywords": "",
+        "location": "Madinah"
+      },
+      {
+        "keywords": "",
+        "location": "Jubail"
+      },
+      {
+        "keywords": "",
+        "location": "Yanbu"
+      },
+      {
+        "keywords": "",
+        "location": "Tabuk"
+      },
+      {
+        "keywords": "",
+        "location": "Abha"
+      },
+      {
+        "keywords": "",
+        "location": ""
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "key": "jooble",
+    "name": "Jooble",
+    "type": "jooble",
+    "queries_per_run": 2,
+    "queries": [
+      {
+        "keywords": "",
+        "location": "الرياض"
+      },
+      {
+        "keywords": "",
+        "location": "جدة"
+      },
+      {
+        "keywords": "",
+        "location": "الدمام"
+      },
+      {
+        "keywords": "",
+        "location": ""
+      },
+      {
+        "keywords": "",
+        "location": "مكة"
+      },
+      {
+        "keywords": "",
+        "location": "المدينة المنورة"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "key": "x",
+    "name": "X (تويتر)",
+    "type": "x",
+    "queries": [
+      "(وظائف OR توظيف OR مطلوب) (الرياض OR جدة OR الدمام OR السعودية) lang:ar"
+    ],
+    "max_results": 50,
+    "enabled": true
+  },
+  {
+    "key": "programs_watch",
+    "name": "صفحات برامج التدريب التعاوني والابتعاث",
+    "type": "programs_watch",
+    "enabled": true
+  }
+]

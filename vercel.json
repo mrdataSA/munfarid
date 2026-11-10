@@ -1,0 +1,39 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["iad1"],
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60,
+      "memory": 1024,
+      "includeFiles": "{server.py,backend/**,snapshot/**,collectors/sources.json,collectors/research/*.json}"
+    }
+  },
+  "redirects": [
+    { "source": "/snapshot/:path*", "destination": "/", "permanent": false },
+    { "source": "/backend/:path*", "destination": "/", "permanent": false },
+    { "source": "/collectors/:path*", "destination": "/", "permanent": false },
+    { "source": "/tools/:path*", "destination": "/", "permanent": false },
+    { "source": "/server.py", "destination": "/", "permanent": false },
+    { "source": "/requirements:rest*", "destination": "/", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/api/jobs", "destination": "/pub/jobs.json" },
+    { "source": "/api/(.*)", "destination": "/api/index" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Strict-Transport-Security", "value": "max-age=31536000" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }
+      ]
+    },
+    {
+      "source": "/pub/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=300" }]
+    }
+  ]
+}
