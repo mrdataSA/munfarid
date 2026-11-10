@@ -78,4 +78,4 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: npx --yes vercel@53.1.1 deploy --prod --yes --token "$VERCEL_TOKEN" > /dev/null
+        run: python tools/vercel_deploy.py   # REST API: works with Vercel's team-scoped tokens
