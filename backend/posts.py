@@ -56,7 +56,8 @@ def _s(v, n):
 
 # Random per-process key: the stored hash cannot be reversed by trying every IPv4
 # address. A restart only resets the per-IP posting limits.
-_IP_KEY = secrets.token_bytes(32)
+_IP_KEY = (config.webhook_header_secret().encode() + b"ip-hash") if config.ON_VERCEL and config.TELEGRAM_WEBHOOK_SECRET \
+    else secrets.token_bytes(32)
 
 
 def ip_hash(ip):

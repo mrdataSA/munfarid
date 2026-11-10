@@ -21,6 +21,33 @@ def _demo_jobs():
     return data
 
 
+_ids_cache = [None, frozenset()]
+
+
+def _snapshot_ids(jobs):
+    if _ids_cache[0] is not jobs:   # the snapshot list never changes within a deployment
+        _ids_cache[0], _ids_cache[1] = jobs, frozenset(j.get("id") for j in jobs)
+    return _ids_cache[1]
+
+
+RECENT_DAYS = 3
+
+
+def remember_recent(added):
+    """Cloud collector: keep new jobs in the database so the bot and site see them before the
+    next deployment carries them (older than RECENT_DAYS are dropped)."""
+    if not (config.DATABASE_URL and added):
+        return
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now().astimezone() - timedelta(days=RECENT_DAYS)).isoformat(timespec="seconds")
+    with storage.edit("recent_jobs") as recent:
+        for j in added:
+            if j.get("id"):
+                recent[j["id"]] = j
+        for k in [k for k, j in recent.items() if (j.get("collected_at") or "") < cutoff]:
+            del recent[k]
+
+
 def hidden_ids():
     return set(storage.read_cached("settings").get("hidden_job_ids", []))
 
@@ -32,7 +59,12 @@ def all_jobs(include_demo=True):
     """
     hidden = hidden_ids()
     direct = posts.public_jobs(hidden)
-    collected = [j for j in storage.read_cached("jobs")
+    stored = storage.read_cached("jobs")
+    if config.SNAPSHOT_DIR and config.DATABASE_URL:
+        # Vercel: the snapshot is from the last deployment; newer jobs come from the database
+        have = _snapshot_ids(stored)
+        stored = stored + [j for j in storage.read_cached("recent_jobs").values() if j.get("id") not in have]
+    collected = [j for j in stored
                  if j["id"] not in hidden and not normalize.is_expired(j, config.JOB_MAX_AGE_DAYS)]
     jobs = direct + collected
     is_demo = False

@@ -68,32 +68,51 @@ def _ssl_context():
     return ctx
 
 
+# Nothing may wait forever: a stuck writer would hold everyone's lock (seconds)
+LOCK_TIMEOUT, STATEMENT_TIMEOUT, IDLE_TX_TIMEOUT = 20, 40, 60
+
+
 def _connect():
     import pg8000.native  # only needed in cloud mode
     u = urllib.parse.urlparse(config.DATABASE_URL)
-    return pg8000.native.Connection(
+    conn = pg8000.native.Connection(
         user=urllib.parse.unquote(u.username or ""), password=urllib.parse.unquote(u.password or ""),
         host=u.hostname, port=u.port or 5432, database=(u.path or "/postgres").lstrip("/") or "postgres",
-        ssl_context=_ssl_context(), timeout=60, application_name="munfarid")
+        ssl_context=_ssl_context(), timeout=STATEMENT_TIMEOUT + 20, application_name="munfarid")
+    conn.run(f"set lock_timeout = '{LOCK_TIMEOUT}s'")
+    conn.run(f"set statement_timeout = '{STATEMENT_TIMEOUT}s'")
+    conn.run(f"set idle_in_transaction_session_timeout = '{IDLE_TX_TIMEOUT}s'")
+    return conn
+
+
+def _drop_connection():
+    global _conn
+    if _conn is not None:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+    _conn = None
+    _mirror.clear()   # the copies may hold rows of a transaction that never committed
+    _hw.clear()
 
 
 def _run(sql, **params):
-    """Run one statement; reconnects once if the connection dropped (only outside a transaction)."""
-    global _conn
+    """Run one statement. Outside a transaction a dropped connection is retried once; inside one
+    it never is (a new connection would silently be outside the transaction and the lock)."""
     import pg8000.exceptions
     with _conn_lock:
+        in_tx = getattr(_tx, "depth", 0) > 0
         for attempt in range(2):
             if _conn is None:
-                _conn = _connect()
+                if in_tx:
+                    raise PgError("database connection lost inside a transaction")
+                globals()["_conn"] = _connect()
             try:
                 return _conn.run(sql, **params)
             except (pg8000.exceptions.InterfaceError, OSError, ssl.SSLError) as e:
-                try:
-                    _conn.close()
-                except Exception:
-                    pass
-                _conn = None
-                if attempt or getattr(_tx, "depth", 0):
+                _drop_connection()
+                if attempt or in_tx:
                     raise PgError(f"database connection lost: {e}")
                 time.sleep(0.5)
 
@@ -113,12 +132,17 @@ class _Locked:
         depth = getattr(_tx, "depth", 0)
         if depth == 0:
             try:
+                _run("select 1")              # (re)connect now if an idle connection was closed
+                _tx.depth = 1                 # from here on nothing is retried on a new connection
                 _run("begin")
                 _run("select pg_advisory_xact_lock(:k)", k=LOCK_ID)
             except BaseException:
+                _tx.depth = 0
+                _abort()
                 _conn_lock.release()
                 raise
-        _tx.depth = depth + 1
+        else:
+            _tx.depth = depth + 1
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -126,18 +150,33 @@ class _Locked:
             _tx.depth -= 1
             if _tx.depth == 0:
                 if exc_type is None:
-                    _run("commit")
-                else:
                     try:
-                        _run("rollback")
-                    except Exception:
-                        pass
+                        _tx.depth = 1         # commit is never retried on another connection
+                        _run("commit")
+                    except BaseException:
+                        _abort()
+                        raise
                     finally:
-                        _mirror.clear()   # copies may hold rolled-back rows
-                        _hw.clear()
+                        _tx.depth = 0
+                else:
+                    _abort()
         finally:
             _conn_lock.release()
         return False
+
+
+def _abort():
+    """Roll back; if even that fails, drop the connection. The copies are cleared either way."""
+    try:
+        if _conn is not None:
+            _tx.depth = 1
+            _conn.run("rollback")
+    except Exception:
+        _drop_connection()
+    finally:
+        _tx.depth = 0
+        _mirror.clear()
+        _hw.clear()
 
 
 def locked():
@@ -202,9 +241,20 @@ def _store(coll, factory, new):
     _sync(coll, factory)
 
 
+def _no_nul(v):
+    """Postgres jsonb refuses the NUL character (PDF text and scraped pages sometimes have it)."""
+    if isinstance(v, str):
+        return v.replace("\x00", "") if "\x00" in v else v
+    if isinstance(v, dict):
+        return {_no_nul(k): _no_nul(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_no_nul(x) for x in v]
+    return v
+
+
 def _upsert(coll, items):
     for start in range(0, len(items), 500):
-        chunk = [{"k": str(k), "v": v} for k, v in items[start:start + 500]]
+        chunk = [{"k": _no_nul(str(k)), "v": _no_nul(v)} for k, v in items[start:start + 500]]
         _run("insert into rizq.rows (coll, key, value, deleted, ver, updated_at) "
              "select :c, e->>'k', e->'v', false, nextval('rizq.ver'), now() "
              "from jsonb_array_elements(cast(:items as jsonb)) as e "

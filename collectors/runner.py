@@ -48,9 +48,10 @@ HELPER_MAX_ITEMS = 5000
 def from_helper(source):
     """Jobs the Saudi helper (tools/saudi_helper.py, on a home connection in Saudi Arabia) fetched
     from a site that refuses cloud servers. Taken out of the shared inbox; empty when it was off."""
-    with storage.edit("inbox") as inbox:
-        box = inbox.pop(source["key"], None) or {}
+    box = storage.read("inbox").get(source["key"]) or {}
     batches = box.get("batches") or []
+    # removed by _helper_done() only after these jobs are stored: a crash keeps them for next run
+    source["_helper_consumed"] = [b.get("at") for b in batches]
     items = [it for b in batches for it in (b.get("items") or [])][-HELPER_MAX_ITEMS:]
     if batches and batches[-1].get("filter_jobs") is not None:
         source["filter_jobs"] = batches[-1]["filter_jobs"]
@@ -59,6 +60,18 @@ def from_helper(source):
     else:
         source["_note"] = "لا جديد من المساعد السعودي (جهاز رائد مطفأ أو لم يعمل بعد)"
     return items
+
+
+def _helper_done(source):
+    done = set(source.pop("_helper_consumed", None) or [])
+    if not done:
+        return
+    with storage.edit("inbox") as inbox:
+        box = inbox.get(source["key"])
+        if box:
+            box["batches"] = [b for b in box.get("batches") or [] if b.get("at") not in done]
+            if not box["batches"]:
+                del inbox[source["key"]]
 
 
 def load_sources():
@@ -207,6 +220,8 @@ def _store_source(src, items, totals, sent_per_user):
         except Exception:
             log.warning("enrichment failed for %s:\n%s", src["key"], traceback.format_exc())
         totals["sent"] += notifier.notify_new_jobs(added, sent_per_user)
+        if config.ON_CI:
+            catalog.remember_recent(added)   # searchable on Vercel right away (before the next deploy)
         bot.submit_new_jobs(added)  # Telegram bot alerts + feeds, sent from the bot's own thread
 
 
@@ -269,8 +284,11 @@ def run_all(only=None, fast=False):
             if items:
                 try:  # store + alert right away, so a new job reaches users without waiting for the run
                     _store_source(src, items, totals, sent_per_user)
+                    _helper_done(src)
                 except Exception:
                     log.error("storing %s failed:\n%s", src["key"], traceback.format_exc())
+            elif src.get("_helper_consumed") is not None:
+                _helper_done(src)
 
         if not fast:
             try:  # older jobs the rules left as "أخرى" / without skills, newest first, within budget

@@ -62,10 +62,8 @@ def restore_if_missing():
 def backup_daily():
     """Once a day: the collectors' files to the database (a few MB, compressed)."""
     today = datetime.now().date().isoformat()
-    with storage.edit("bot_state") as st:
-        if st.get("store_backup_date") == today:
-            return False
-        st["store_backup_date"] = today
+    if storage.read("bot_state").get("store_backup_date") == today:
+        return False
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         for f in _store_files():
@@ -73,6 +71,8 @@ def backup_daily():
                 continue
             tar.add(os.path.join(config.STORE_DIR, f), arcname=f)
     pgstore.put_blob(BACKUP_NAME, buf.getvalue())
+    with storage.edit("bot_state") as st:   # recorded only once the upload worked
+        st["store_backup_date"] = today
     log.info("store backed up (%d bytes)", buf.tell())
     return True
 
@@ -123,7 +123,10 @@ def main():
     if "--restore" in sys.argv:
         return
     from collectors import runner
-    full = "--full" in sys.argv or datetime.now().hour % FULL_EVERY_HOURS == 0
+    if "--full" in sys.argv or "--fast" in sys.argv:
+        full = "--full" in sys.argv          # the workflow decides (it installs the browser for full runs)
+    else:
+        full = datetime.now().hour % FULL_EVERY_HOURS == 0
     summary = runner.run_all(fast=not full)
     print(json.dumps(summary, ensure_ascii=False))
     if not bot.flush_alerts(timeout=600):
@@ -132,12 +135,12 @@ def main():
     if config.TELEGRAM_BOT_TOKEN:
         report["feed_posts"] = post_feeds(FEED_MINUTES)
         report["digest_sent"] = bot.digest_tick()
-    write_snapshot()
     try:
         backup_daily()
         pgstore.purge_deleted()
     except Exception:
         log.exception("backup failed (the cache still has the store)")
+    write_snapshot()
     print(json.dumps(report, ensure_ascii=False, default=str))
 
 

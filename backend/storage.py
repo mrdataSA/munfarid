@@ -44,11 +44,14 @@ COLLECTIONS = {
     "subscribers": ("subscribers.json", dict),     # Telegram bot: str(chat_id) -> job seeker or group/channel feed
     "bot_sessions": ("bot_sessions.json", dict),   # Telegram bot: last search results per chat (for "more")
     "inbox": ("inbox.json", dict),                 # source key -> batches fetched by the Saudi helper (tools/saudi_helper.py)
+    "recent_jobs": ("recent_jobs.json", dict),     # cloud: jobs stored in the last days, until Vercel's snapshot has them
+    "rate_limits": ("rate_limits.json", dict),     # cloud: login / post / report attempts per key (shared by all instances)
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode
 SHARED = {"reports", "users", "direct_posts", "sessions", "settings", "sent", "sources_status", "ai_cache",
-          "bot_state", "link_tokens", "alerts_daily", "subscribers", "bot_sessions", "inbox"}
+          "bot_state", "link_tokens", "alerts_daily", "subscribers", "bot_sessions", "inbox", "recent_jobs",
+          "rate_limits"}
 
 
 def _in_db(name):

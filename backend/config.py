@@ -149,6 +149,18 @@ SNAPSHOT_DIR = get("SNAPSHOT_DIR") or (os.path.join(ROOT, "snapshot") if ON_VERC
 PUBLIC_HOSTS = [h.strip().lower() for h in get("PUBLIC_HOSTS").split(",") if h.strip()]
 # Secret part of the Telegram webhook URL + header Telegram must send back
 TELEGRAM_WEBHOOK_SECRET = get("TELEGRAM_WEBHOOK_SECRET")
+if ON_VERCEL:
+    CV_DIR = "/tmp/rizq-cvs"   # the deployment is read-only; the CV text itself is kept in the database
+
+
+def webhook_header_secret():
+    """Telegram sends this in X-Telegram-Bot-Api-Secret-Token. It differs from the URL part
+    (request paths appear in Vercel's logs, headers do not)."""
+    import hashlib
+    import hmac
+    if not TELEGRAM_WEBHOOK_SECRET:
+        return ""
+    return hmac.new(TELEGRAM_WEBHOOK_SECRET.encode(), b"telegram-header", hashlib.sha256).hexdigest()
 
 # Polite, honest client identification for collectors (no personal data)
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "

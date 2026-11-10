@@ -964,14 +964,16 @@ def handle_update(upd):
         return handle_group(msg)
 
 
-def first_delivery(update_id):
-    """Webhook mode: Telegram re-sends an update it thinks failed; handle each one only once."""
+def already_handled(update_id):
+    """Webhook mode: Telegram re-sends an update it thinks failed; one already answered is skipped."""
+    return update_id in (storage.read_cached("bot_state").get("seen_updates") or [])
+
+
+def mark_handled(update_id):
     with storage.edit("bot_state") as st:
         seen = st.get("seen_updates") or []
-        if update_id in seen:
-            return False
-        st["seen_updates"] = (seen + [update_id])[-300:]
-    return True
+        if update_id not in seen:
+            st["seen_updates"] = (seen + [update_id])[-300:]
 
 
 # ---------------------------------------------------------------- new jobs
@@ -984,6 +986,12 @@ _alerts_lock = threading.Lock()
 def submit_new_jobs(added):
     """Hand new jobs to the alerts thread (the collector never waits on Telegram)."""
     if not tg.enabled() or not added:
+        return
+    if config.ON_VERCEL:   # no background threads there (a frozen one could hold the database lock)
+        try:
+            on_new_jobs(list(added))
+        except Exception:
+            log.exception("bot alerts failed")
         return
     with _alerts_lock:
         if _alerts_thread[0] is None or not _alerts_thread[0].is_alive():
@@ -1171,12 +1179,15 @@ def digest_tick(now=None):
         hits = [j for j in search(s, fresh) if j["id"] not in already]
         plans.append((s, hits))
     with storage.edit("subscribers") as all_subs:   # marked first, in one write: a crash must not resend
+        mine = []
         for s, hits in plans:
             cur = all_subs.get(_key(s["chat_id"]))
-            if cur is None:
+            if cur is None or cur.get("last_digest") == today:   # another run already sent it
                 continue
             cur["last_digest"], cur["since"] = today, stamp
             _mark_sent(cur, [j["id"] for j in hits[:MAX_RESULTS]])
+            mine.append((s, hits))
+        plans = mine
     by_id = {j["id"]: j for j in jobs}
     outbox = []
     with storage.edit("bot_sessions") as ss:   # every recipient's results + first page in one write

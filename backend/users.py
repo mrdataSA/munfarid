@@ -198,6 +198,9 @@ def enrich(user_id):
 
 
 def _enrich_async(user_id):
+    if config.ON_VERCEL:
+        _safe_enrich(user_id)   # a background thread may be frozen once the answer is sent
+        return
     threading.Thread(target=_safe_enrich, args=(user_id,), daemon=True).start()
 
 

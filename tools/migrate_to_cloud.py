@@ -4,7 +4,8 @@
 
 Creates the tables, copies the shared collections (subscribers, settings, AI cache...)
 and uploads data/store as the backup the first GitHub Actions run starts from.
-Safe to run again: it overwrites the cloud copy with the local one.
+Refuses to run once the cloud has its own data (it would replace it with the local copy),
+unless --force is given.
 """
 
 import os
@@ -28,6 +29,8 @@ def main():
     local["bot_state"] = {k: v for k, v in local["bot_state"].items() if k not in DROP_STATE_KEYS}
     config.DATABASE_URL = url             # write the database
     pgstore.init_schema()
+    if storage.read("subscribers") and "--force" not in sys.argv:
+        sys.exit("the cloud already has subscribers: not overwriting it (use --force only if you are sure)")
     for name, data in local.items():
         storage.write(name, data)
         print(f"{name}: {len(data)}")

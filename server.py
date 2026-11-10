@@ -562,15 +562,17 @@ def api_telegram_webhook(h, secret):
     want = config.TELEGRAM_WEBHOOK_SECRET
     got_header = h.headers.get("X-Telegram-Bot-Api-Secret-Token") or ""
     if not (want and telegram_bot.enabled() and hmac.compare_digest(secret, want)
-            and hmac.compare_digest(got_header, want)):
+            and hmac.compare_digest(got_header, config.webhook_header_secret())):
         raise ApiError(404, "غير موجود.")
     upd = h.body()
-    if isinstance(upd, dict) and isinstance(upd.get("update_id"), int) and bot.first_delivery(upd["update_id"]):
+    if isinstance(upd, dict) and isinstance(upd.get("update_id"), int) and not bot.already_handled(upd["update_id"]):
         try:
             bot.handle_update(upd)
         except Exception:
             # answered 200 anyway: a failing update must not be re-sent by Telegram forever
             log.exception("bot update %s failed", upd.get("update_id"))
+        # marked after handling: if the function is stopped half-way, Telegram's retry is handled
+        bot.mark_handled(upd["update_id"])
     return ok()
 
 
@@ -607,6 +609,9 @@ def _notify_async(job):
         except Exception:
             log.exception("notify for direct post failed")
         bot.submit_new_jobs([job])  # Telegram bot: instant alerts + group/channel feeds
+    if config.ON_VERCEL:
+        run()   # a background thread may be frozen once the answer is sent
+        return
     threading.Thread(target=run, daemon=True, name="rizq-notify-post").start()
 
 

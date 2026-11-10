@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from . import storage
+from . import config, storage
 
 SESSION_DAYS = 7
 ADMIN_SESSION_HOURS = 12
@@ -72,18 +72,41 @@ class RateLimiter:
         self.fails = {}
         self.lock = threading.Lock()
 
+    def _shared(self):
+        return bool(config.DATABASE_URL and config.ON_VERCEL)
+
+    @staticmethod
+    def _hk(key):
+        """Keys hold IP addresses: only a hash is stored in the database."""
+        return hashlib.sha256((config.webhook_header_secret() + "|rl|" + key).encode()).hexdigest()[:24]
+
     def blocked(self, key):
+        now = time.time()
+        if self._shared():
+            hits = storage.read_cached("rate_limits").get(self._hk(key)) or []
+            return len([t for t in hits if now - t < self.window]) >= self.max
         with self.lock:
-            now = time.time()
             recent = [t for t in self.fails.get(key, []) if now - t < self.window]
             self.fails[key] = recent
             return len(recent) >= self.max
 
     def fail(self, key):
+        now = time.time()
+        if self._shared():
+            with storage.edit("rate_limits") as rl:
+                k0 = self._hk(key)
+                rl[k0] = [t for t in rl.get(k0) or [] if now - t < self.window][-self.max * 2:] + [now]
+                for k in [k for k, v in rl.items() if not v or now - max(v) > 86400]:
+                    del rl[k]   # forget keys idle for a day
+            return
         with self.lock:
-            self.fails.setdefault(key, []).append(time.time())
+            self.fails.setdefault(key, []).append(now)
 
     def reset(self, key):
+        if self._shared():
+            with storage.edit("rate_limits") as rl:
+                rl.pop(self._hk(key), None)
+            return
         with self.lock:
             self.fails.pop(key, None)
 
