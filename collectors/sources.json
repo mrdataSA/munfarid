@@ -157,6 +157,15 @@
     "enabled": true
   },
   {
+    "key": "ewdifh",
+    "name": "أي وظيفة (ewdifh.com)",
+    "type": "ats",
+    "group": "ewdifh",
+    "per_employer": 25,
+    "enabled": true,
+    "fast": true
+  },
+  {
     "key": "telegram",
     "name": "قنوات تيليجرام",
     "type": "telegram",

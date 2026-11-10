@@ -1795,5 +1795,18 @@
   "source_label": "منصة رزق (rizqsa.com)",
   "facts_only": true,
   "verified": "2026-11-10"
+ },
+ {
+  "name": "أي وظيفة",
+  "name_en": "ewdifh.com",
+  "group": "ewdifh",
+  "enabled": true,
+  "ats": "jsonld",
+  "url": "https://www.ewdifh.com/category/all-jobs",
+  "link_contains": "/jobs/",
+  "interval": 3.0,
+  "source_label": "أي وظيفة (ewdifh.com)",
+  "facts_only": true,
+  "verified": "2026-11-10"
  }
 ]

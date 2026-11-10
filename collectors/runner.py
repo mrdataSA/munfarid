@@ -58,7 +58,7 @@ def from_helper(source):
     if batches:
         source["_note"] = f"من المساعد السعودي: {len(batches)} دفعة، آخرها {batches[-1].get('at', '')[:16]}"
     else:
-        source["_note"] = "لا جديد من المساعد السعودي (جهاز رائد مطفأ أو لم يعمل بعد)"
+        source["_note"] = "يحجب خوادم السحابة: يُجلب فقط عبر مساعد بعنوان سعودي (غير مفعّل حالياً)"
     return items
 
 

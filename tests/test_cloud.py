@@ -48,7 +48,7 @@ try:
     runner._helper_done(src2)
     check("inbox entry removed when empty", "jadarat" not in storage.read("inbox"))
     src3 = {"key": "tanqeeb"}
-    check("empty inbox gives nothing", runner.from_helper(src3) == [] and "مطفأ" in src3["_note"])
+    check("empty inbox gives nothing", runner.from_helper(src3) == [] and "مساعد" in src3["_note"])
 
     # --- read-only snapshot (Vercel)
     snap = os.path.join(TMP, "snap")
