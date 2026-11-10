@@ -4,7 +4,8 @@
     "name": "جدارات",
     "type": "jadarat",
     "pages": 40,
-    "enabled": true
+    "enabled": true,
+    "cloud": "helper"
   },
   {
     "key": "saudijobs24",
@@ -117,7 +118,8 @@
     "pages": 1,
     "backfill_pages": 1,
     "max_pages": 8,
-    "jitter": 1.5
+    "jitter": 1.5,
+    "cloud": "helper"
   },
   {
     "key": "sabbar",

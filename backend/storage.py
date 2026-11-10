@@ -43,11 +43,12 @@ COLLECTIONS = {
     "programs_watch": ("programs_watch.json", dict),  # "kind:id" -> what the official page last said
     "subscribers": ("subscribers.json", dict),     # Telegram bot: str(chat_id) -> job seeker or group/channel feed
     "bot_sessions": ("bot_sessions.json", dict),   # Telegram bot: last search results per chat (for "more")
+    "inbox": ("inbox.json", dict),                 # source key -> batches fetched by the Saudi helper (tools/saudi_helper.py)
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode
 SHARED = {"reports", "users", "direct_posts", "sessions", "settings", "sent", "sources_status", "ai_cache",
-          "bot_state", "link_tokens", "alerts_daily", "subscribers", "bot_sessions"}
+          "bot_state", "link_tokens", "alerts_daily", "subscribers", "bot_sessions", "inbox"}
 
 
 def _in_db(name):

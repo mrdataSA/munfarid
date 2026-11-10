@@ -13,7 +13,7 @@ import threading
 import time
 import traceback
 
-from backend import ai, bot, catalog, enrich, normalize, notifier, storage
+from backend import ai, bot, catalog, config, enrich, normalize, notifier, storage
 
 from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, x_api
 
@@ -40,6 +40,25 @@ _run_lock = threading.Lock()
 COMPANY_FROM_TITLE = re.compile(
     r"^(?:اعلان\s+)?((?:شركة|شركه|مجموعة|مجموعه|بنك|مصرف|مستشفى|جامعة|جامعه|وزارة|وزاره|هيئة|هيئه|مؤسسة|مؤسسه|"
     r"مركز|مدارس|مطاعم|صيدليات|مدينة|مدينه)?\s*[^\s].{1,60}?)\s+(?:تعلن|يعلن|توفر|يوفر|تطلب|يطلب|تفتح|يفتح)\b")
+
+
+HELPER_MAX_ITEMS = 5000
+
+
+def from_helper(source):
+    """Jobs the Saudi helper (tools/saudi_helper.py, on a home connection in Saudi Arabia) fetched
+    from a site that refuses cloud servers. Taken out of the shared inbox; empty when it was off."""
+    with storage.edit("inbox") as inbox:
+        box = inbox.pop(source["key"], None) or {}
+    batches = box.get("batches") or []
+    items = [it for b in batches for it in (b.get("items") or [])][-HELPER_MAX_ITEMS:]
+    if batches and batches[-1].get("filter_jobs") is not None:
+        source["filter_jobs"] = batches[-1]["filter_jobs"]
+    if batches:
+        source["_note"] = f"من المساعد السعودي: {len(batches)} دفعة، آخرها {batches[-1].get('at', '')[:16]}"
+    else:
+        source["_note"] = "لا جديد من المساعد السعودي (جهاز رائد مطفأ أو لم يعمل بعد)"
+    return items
 
 
 def load_sources():
@@ -212,7 +231,9 @@ def run_all(only=None, fast=False):
             st[(mark or "_last") + "_attempt"] = storage.now_iso()
         sources = [s for s in load_sources() if s.get("enabled", True)]
         if fast:
-            sources = [dict(s, _fast=True) for s in sources if s.get("fast")]
+            # the helper's inbox is cheap to read: its jobs go out on every run, not only full ones
+            sources = [dict(s, _fast=True) for s in sources
+                       if s.get("fast") or (config.ON_CI and s.get("cloud") == "helper")]
         if only:
             sources = [s for s in sources if s["key"] in only]
         totals = {"items": 0, "jobs": 0, "added": 0, "sent": 0, "ai_used": False}
@@ -220,6 +241,8 @@ def run_all(only=None, fast=False):
         for src in sources:
             t0 = time.time()
             fn = COLLECTORS.get(src.get("type"))
+            if src.get("cloud") == "helper" and config.ON_CI:
+                fn = from_helper   # the site refuses cloud servers: a Saudi connection fetched it
             if not fn:
                 _set_status(src["key"], name=src["name"], status="error", message="unknown type")
                 continue
