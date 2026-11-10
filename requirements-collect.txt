@@ -1,6 +1,5 @@
-# GitHub Actions (collectors)
+# GitHub Actions (collectors, Linux). The w3lib<2.3 pin is only for Raed's Windows PC (App Control)
 pg8000==1.31.6
 pypdf==7.0.0
 scrapling==0.4.15
-w3lib<2.3
 playwright==1.64.1
