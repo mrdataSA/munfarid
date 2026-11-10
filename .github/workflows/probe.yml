@@ -21,9 +21,10 @@ jobs:
           URLS: ${{ inputs.urls }}
         run: |
           UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 RizqJobsBot/1.0"
+          n=0
           for u in $URLS; do
             echo "=================== $u"
-            curl -sS -m 25 -A "$UA" -o body.txt -D headers.txt -w "status=%{http_code} ip=%{remote_ip} time=%{time_total}s size=%{size_download}\n" "$u" || echo "curl failed: $?"
+            n=$((n+1)); curl -sS -m 25 -A "$UA" -o body.txt -D headers.txt -w "status=%{http_code} ip=%{remote_ip} time=%{time_total}s size=%{size_download}\n" "$u" || echo "curl failed: $?"
             grep -iE "^(server|cf-ray|x-cache|location|content-type|via|x-amz|akamai|x-iinfo|set-cookie: (incap|visid|__cf))" headers.txt | cut -c1-160 || true
             head -c 600 body.txt | tr -d '\r'; echo
           done
