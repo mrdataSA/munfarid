@@ -98,6 +98,13 @@ try:
     check("relay job: same Jadarat ad is not added twice", added == [] and len(kept) == 1
           and kept[0].get("also_on") == ["ناقل"], kept)
 
+    # jobs stored before the marking existed get marked on the next store
+    storage.write("jobs", [{"id": "o1", "title": "قديمة", "company": "جهة", "city": "الرياض", "source": "ناقل",
+                            "url": "https://relay.example/old", "apply_url": "https://jadarat.sa/JobDetails?Param=OLD",
+                            "posted_date": "2026-11-12"}])
+    catalog.merge_collected([])
+    check("older relay of Jadarat marked on the next store", storage.read("jobs")[0].get("via_jadarat") is True)
+
     # portal pages (ExploreJobs) are shared by many posts: they never merge different jobs
     def relay(i, link):
         return {"id": f"r{i}", "title": f"وظيفة {i}", "company": f"جهة {i}", "city": "الرياض", "source": "ناقل",

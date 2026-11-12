@@ -100,6 +100,12 @@ def _url_key(url):
 JADARAT_SOURCE = "جدارات"
 
 
+def _is_jadarat(url):
+    from urllib.parse import urlsplit
+    host = urlsplit(url or "").netloc.lower().split(":")[0]
+    return host == "jadarat.sa" or host.endswith(".jadarat.sa")
+
+
 def _jadarat_ad_key(job):
     """The Jadarat ad page a relayed job links to (JobDetails?Param=...), else ''. Portal pages
     such as ExploreJobs are shared by many posts and must never merge them."""
@@ -166,6 +172,11 @@ def merge_collected(new_jobs):
             if jad_key:
                 by_url.setdefault(jad_key, job)
             added.append(job)
+        # Jobs stored before relays were marked: a non-Jadarat post whose apply link is a Jadarat page
+        for j in jobs:
+            if not j.get("via_jadarat") and j.get("source") != JADARAT_SOURCE \
+                    and _is_jadarat(j.get("apply_url")) and not _is_jadarat(j.get("url")):
+                j["via_jadarat"] = True
         # Prune expired and cap size (keep newest)
         keep = [j for j in jobs if not normalize.is_expired(j, config.JOB_MAX_AGE_DAYS)]
         keep.sort(key=lambda j: j.get("posted_date") or "", reverse=True)
