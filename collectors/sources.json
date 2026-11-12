@@ -15,6 +15,29 @@
     "enabled": true
   },
   {
+    "key": "wzaifs",
+    "name": "وظائف اليوم (wzaifs.com)",
+    "type": "rss",
+    "url": "https://wzaifs.com/feed",
+    "enabled": true,
+    "fast": true,
+    "apply_from_feed": true,
+    "note": "Relay: re-posts government and company ads with the official apply link (Jadarat ones get marked)"
+  },
+  {
+    "key": "jadaratnews",
+    "name": "أخبار الوظائف (jadarat.news)",
+    "type": "rss",
+    "url": "https://jadarat.news/feed/",
+    "enabled": true,
+    "fast": true,
+    "apply_from_feed": true,
+    "category_exclude": [
+      "كورسات"
+    ],
+    "note": "Unofficial news site (not Jadarat itself): government job news with the official apply link"
+  },
+  {
     "key": "linkedksa",
     "name": "ساحة الوظائف",
     "type": "rss",

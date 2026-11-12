@@ -78,7 +78,7 @@ def _record_usage(tokens):
         u["tokens"] += int(tokens or 0)
 
 
-def _post(body):
+def _post(body, timeout=60):
     req = urllib.request.Request(
         API_URL,
         data=json.dumps(body).encode("utf-8"),
@@ -89,14 +89,14 @@ def _post(body):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
 
-def _tpm_wait(model, estimate):
+def _tpm_wait(model, estimate, max_wait=TPM_MAX_WAIT):
     """Wait (briefly) until this call fits in the model's tokens-per-minute window."""
     q = _tpm.setdefault(model, deque())
-    deadline = time.time() + TPM_MAX_WAIT
+    deadline = time.time() + max_wait
     while True:
         now = time.time()
         while q and now - q[0][0] > 60:
@@ -107,19 +107,29 @@ def _tpm_wait(model, estimate):
         time.sleep(min(max(60 - (now - q[0][0]), 0.5), deadline - now))
 
 
-def chat_json(system, user, max_tokens=1500, models=None):
-    """One JSON-mode chat call with pacing, budget and model fallback (models: preferred order)."""
+QUICK_SECONDS = 25   # a person is waiting (bot on Vercel, 120 s per update): whole call incl. fallback
+
+
+def chat_json(system, user, max_tokens=1500, models=None, quick=False):
+    """One JSON-mode chat call with pacing, budget and model fallback (models: preferred order).
+    quick=True bounds the whole call (both models) to about QUICK_SECONDS."""
     if not enabled():
         raise AIUnavailable("GROQ_API_KEY not set")
     _check_budget()
     models = list(dict.fromkeys(models or [config.GROQ_MODEL, FALLBACK_MODEL]))
     last_error = None
+    stop_at = time.time() + QUICK_SECONDS if quick else None
     for model in models:
         if _cool_until.get(model, 0) > time.time():
             last_error = "rate limited (cooling down)"
             continue
+        left = (stop_at - time.time()) if stop_at else None
+        if left is not None and left < 5:
+            last_error = "no time left"
+            break
         with _pace_lock:
-            _tpm_wait(model, (len(system) + len(user)) // 3 + max_tokens // 2)
+            _tpm_wait(model, (len(system) + len(user)) // 3 + max_tokens // 2,
+                      max_wait=min(TPM_MAX_WAIT, 3) if quick else TPM_MAX_WAIT)
             wait = MIN_INTERVAL - (time.time() - _last_call[0])
             if wait > 0:
                 time.sleep(wait)
@@ -135,7 +145,7 @@ def chat_json(system, user, max_tokens=1500, models=None):
         if "gpt-oss" in model:
             body["reasoning_effort"] = "low"
         try:
-            data = _post(body)
+            data = _post(body, timeout=max(3, stop_at - time.time()) if stop_at else 60)
         except urllib.error.HTTPError as e:
             last_error = f"HTTP {e.code}"
             if e.code == 429:

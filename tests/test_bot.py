@@ -52,13 +52,21 @@ def fake_call(method, http_timeout=30, **p):
 ai_calls = []
 
 
-def fake_chat_json(system, user, max_tokens=1500, models=None):
+def fake_chat_json(system, user, max_tokens=1500, models=None, quick=False):
     ai_calls.append((system, user))
     if "search job ads by title" in system:
         got = json.loads(user)
         table = {"محاسب": ["accountant", "محاسب عام", "General Accountant", "مدير"],
                  "مهندس مدني": ["civil engineer", "site engineer"]}
-        return {"results": [{"title": t, "variants": table.get(t, [])} for t in got]}
+        rel = {"مراجع حسابات": ["مدقق حسابات", "طيار"]}
+        return {"results": [{"title": t, "variants": table.get(t, []), "related": rel.get(t, [])} for t in got]}
+    if "one message sent to a Saudi job-news" in system:
+        said = json.loads(user)
+        if "accounting" in said:
+            return {"intent": "search", "titles": ["accountant"], "city": "جدة", "remote": False}
+        if "how does" in said.lower():
+            return {"intent": "help", "titles": [], "city": "", "remote": False}
+        return {"intent": "other", "titles": [], "city": "", "remote": False}
     if "CV or self-description" in system:
         return {"titles": ["محاسب", "مدقق حسابات", "Auditor"], "skills": ["SAP", "Excel", "خبرة 5 سنوات"],
                 "summary": "محاسب بخبرة في الإقفال الشهري والتدقيق الداخلي", "specialty": ""}
@@ -127,8 +135,12 @@ U = 5001
 try:
     # ------------------------------------------------------------ start + titles
     bot.handle_update(msg(U, "/start"))
-    check("start: welcome with main keyboard", "اكتب المسمى الوظيفي" in texts_to(U)[-1]
-          and last_markup(U).get("keyboard"))
+    welcome = [p for m, p in sent if m == "sendMessage" and p.get("chat_id") == U]
+    check("start: welcome explains the steps, with main keyboard",
+          "كيف يعمل" in welcome[-2]["text"] and "إعلانها الأصلي" in welcome[-2]["text"]
+          and (welcome[-2].get("reply_markup") or {}).get("keyboard"))
+    check("start: new person gets tap-to-try examples",
+          (last_markup(U).get("inline_keyboard") or [[{}]])[0][0].get("callback_data", "").startswith("try:"))
     check("start: subscriber created (daily)", bot.get_sub(U)["mode"] == "daily")
 
     bot.handle_update(msg(U, "ابغى وظيفة محاسب بالرياض"))
@@ -457,6 +469,84 @@ try:
     bot.submit_new_jobs([job(500, "محاسب رواتب")])
     check("alerts: flush waits for the background thread", bot.flush_alerts(timeout=10)
           and len(texts_to(D)) == before + 1)
+
+    # ------------------------------------------------------------ clear process, both languages, suggestions
+    W = 9101
+    bot.handle_update(msg(W, "السلام عليكم"))
+    check("greeting: answered, not taken as a job title", not (bot.get_sub(W) or {}).get("titles")
+          and "أهلاً" in texts_to(W)[-1])
+    bot.handle_update(msg(W, "I'm looking for accounting jobs in Jeddah please"))
+    sw = bot.get_sub(W)
+    check("english sentence: AI reads the title", [t["title"] for t in sw["titles"]] == ["accountant"], sw["titles"])
+    check("english sentence: city read", sw["city"] == "جدة", sw["city"])
+    check("english sentence: Jeddah job found", "j100" in [j["id"] for j in bot.search(sw, bot._jobs())])
+    out = "\n".join(texts_to(W)[-4:])
+    check("first title: subscription explained", "تم اشتراكك" in out and "رابطها الأصلي" in out, out[:300])
+    n_ai = len(ai_calls)
+    bot.handle_update(msg(W, "I'm looking for accounting jobs in Jeddah please"))
+    check("same sentence again: cached, no new AI call", len([c for c in ai_calls[n_ai:]
+                                                              if "one message sent" in c[0]]) == 0)
+    bot.handle_update(msg(W, "what time is it?"))
+    check("unrelated question: guided, no title added", "أبحث لك عن الوظائف" in texts_to(W)[-1]
+          and len(bot.get_sub(W)["titles"]) == 1)
+    bot.handle_update(msg(W, "how does this bot work?"))
+    check("how-to question: full guide", "كيف يعمل" in texts_to(W)[-1])
+    bot.handle_update(msg(W, bot.BTN_HELP))
+    check("help button: full guide", "كيف يعمل" in texts_to(W)[-1])
+    bot.handle_update(msg(W, "/help"))
+    check("/help: full guide", "كيف يعمل" in texts_to(W)[-1])
+
+    X = 9102
+    bot.handle_update(cb(X, "try:0"))
+    check("example button: adds the title and searches", [t["title"] for t in bot.get_sub(X)["titles"]] == ["محاسب"]
+          and any("وجدنا" in t for t in texts_to(X)))
+
+    storage.write("jobs", storage.read("jobs") + [
+        job(601, "مدقق حسابات", days=1), job(602, "مدقق حسابات أول", days=1),
+        job(603, "وظائف إدارية", source="وظائف اليوم (wzaifs.com)", via_jadarat=True,
+            apply_url="https://jadarat.sa/JobDetails?Param=abc", raw_text="مطلوب مراجع حسابات"),
+        job(604, "مدقق حسابات - الرياض", source="أخبار الوظائف (jadarat.news)", days=1,
+            apply_url="https://careers.example.gov.sa/apply/1")])
+    S = 9103
+    bot.handle_update(msg(S, "مراجع حسابات"))
+    mk = last_markup(S).get("inline_keyboard") or []
+    labels = [b["text"] for row in mk for b in row]
+    check("suggestions: related title with jobs offered", any("مدقق حسابات" in t for t in labels), labels)
+    check("suggestions: related title without jobs not offered", not any("طيار" in t for t in labels), labels)
+    sug = next(b["callback_data"] for row in mk for b in row if "مدقق حسابات" in b["text"])
+    bot.handle_update(cb(S, sug))
+    names = [t["title"] for t in bot.get_sub(S)["titles"]]
+    check("suggestion tap: title added", "مدقق حسابات" in names, names)
+    found = [j["id"] for j in bot.search(bot.get_sub(S), bot._jobs())]
+    check("suggestion tap: its jobs found", "j601" in found and "j602" in found, found)
+    bot.handle_update(cb(S, "sug:zzzzzz"))
+    check("unknown suggestion: explained", "انتهت صلاحية" in texts_to(S)[-1])
+    check("old suggestion button still adds its own title", sug[4:] in storage.read("bot_sessions")[str(S)]["sug"])
+
+    # without AI (quota used up), a question is not saved as a job title
+    real_allowed = bot._ai_allowed
+    bot._ai_allowed = lambda chat_id, limit=0: False
+    try:
+        bot.handle_update(msg(S, "متى يفتح التقديم على الوظائف العسكرية؟"))
+        check("no AI: question not saved as a title", not any("العسكريه" in titles.tokens(t["title"])
+                                                               or "متي" in t["title"] for t in bot.get_sub(S)["titles"])
+              and "أبحث لك عن الوظائف" in texts_to(S)[-1], bot.get_sub(S)["titles"])
+    finally:
+        bot._ai_allowed = real_allowed
+
+    c_j = bot.card(job(603, "وظائف إدارية", source="وظائف اليوم (wzaifs.com)", via_jadarat=True,
+                       apply_url="https://jadarat.sa/JobDetails?Param=abc"))
+    check("card: Jadarat relay shows the Jadarat link and the relay", "رابط التقديم في جدارات" in c_j
+          and "نقلاً عن" in c_j and "https://jadarat.sa/JobDetails?Param=abc" in c_j, c_j)
+    c_a = bot.card(job(604, "مدقق", source="أخبار الوظائف (jadarat.news)",
+                       apply_url="https://careers.example.gov.sa/apply/1"))
+    check("card: apply link named as such, with the relay", "رابط التقديم" in c_a and "نقلاً عن" in c_a
+          and "careers.example.gov.sa" in c_a, c_a)
+    with bot._edit_sub(S) as s:
+        s["sources"] = ["جدارات"]
+        s["titles"].append({"title": "مراجع حسابات", "variants": ["مراجع حسابات"], "from": "user"})
+    found = [j["id"] for j in bot.search(bot.get_sub(S), bot._jobs())]
+    check("sources: Jadarat includes jobs relayed from Jadarat", "j603" in found and "j601" not in found, found)
 
     # ------------------------------------------------------------ hygiene
     src = open(os.path.join(ROOT, "backend", "bot.py"), encoding="utf-8").read() + \

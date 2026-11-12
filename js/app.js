@@ -434,6 +434,17 @@
   const searchIndex = new Map();
 
   // ---------- Helpers ----------
+  // Jobs relayed from Jadarat by a public re-posting site (Jadarat itself refuses cloud servers)
+  const JADARAT = 'جدارات';
+  function sourceHtml(j) {
+    return j.via_jadarat ? JADARAT + ' (عبر ناقل: <bdi>' + esc(j.source) + '</bdi>)' : '<bdi>' + esc(j.source) + '</bdi>';
+  }
+  function sourcesOf(jobs) {
+    const list = unique(jobs.map((j) => j.source));
+    if (!list.includes(JADARAT) && jobs.some((j) => j.via_jadarat)) list.push(JADARAT);
+    return list;
+  }
+
   function esc(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => (
       { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -761,7 +772,7 @@
         '</ul>' +
         (chips ? '<ul class="chips" aria-label="المهارات والشروط">' + chips + '</ul>' : '') +
         '<div class="job-card-foot">' +
-          (j.direct ? '<span class="badge badge-direct">إعلان مباشر</span>' : '<span>المصدر: <bdi>' + esc(j.source) + '</bdi></span>') +
+          (j.direct ? '<span class="badge badge-direct">إعلان مباشر</span>' : '<span>المصدر: ' + sourceHtml(j) + '</span>') +
           '<span class="badges">' +
             (j.is_training ? '<span class="badge badge-training">برنامج تدريب</span>' : '') +
             (j.scam_risk ? '<span class="badge badge-warn">تحقّق قبل التقديم</span>' : '') +
@@ -798,7 +809,7 @@
 
   function renderHome() {
     setTitle('');
-    const sources = unique(state.jobs.map((j) => j.source));
+    const sources = sourcesOf(state.jobs);
     const cities = unique(state.jobs.map((j) => j.city).filter((c) => c !== REMOTE && c !== 'غير محدد'));
     const latest = state.jobs.slice(0, 3);
     const shown = topSources(12);
@@ -879,7 +890,7 @@
       (!f.specialty || j.specialty === f.specialty) &&
       (!f.city || j.city === f.city) &&
       (!f.contract || j.contract_type === f.contract) &&
-      (!f.source || j.source === f.source) &&
+      (!f.source || j.source === f.source || (f.source === JADARAT && j.via_jadarat)) &&
       (!f.nationality || (f.nationality === 'saudi' ? j.nationality === SAUDI : j.nationality !== SAUDI)) &&
       (!f.gender || (f.gender === 'men' ? j.gender !== 'نساء' : j.gender !== 'رجال')) &&
       (!terms.length || terms.every((t) => (searchIndex.get(j.id) || '').includes(t)))
@@ -904,7 +915,7 @@
     const specialties = unique(state.jobs.map((j) => j.specialty));
     const cities = unique(state.jobs.map((j) => j.city));
     const contracts = unique(state.jobs.map((j) => j.contract_type));
-    const sources = unique(state.jobs.map((j) => j.source));
+    const sources = sourcesOf(state.jobs);
     const p = state.profile;
 
     main.innerHTML = '' +
@@ -1075,7 +1086,7 @@
                   '<h1><bdi>' + esc(j.title) + '</bdi></h1>' +
                   '<p class="company"><bdi>' + esc(j.company) + '</bdi></p>' +
                   '<div class="detail-badges">' +
-                    (j.direct ? '<span class="badge badge-direct">إعلان مباشر</span>' : '<span class="badge badge-source">المصدر: <bdi>' + esc(j.source) + '</bdi></span>') +
+                    (j.direct ? '<span class="badge badge-direct">إعلان مباشر</span>' : '<span class="badge badge-source">المصدر: ' + sourceHtml(j) + '</span>') +
                     (j.is_training ? '<span class="badge badge-training">برنامج تدريب</span>' : '') +
                     (j.nationality ? '<span class="badge badge-source">' + esc(j.nationality) + '</span>' : '') +
                     (j.gender ? '<span class="badge badge-source">' + esc(genderLabel(j.gender)) + '</span>' : '') +
@@ -1112,7 +1123,7 @@
                   '<div class="meter" role="progressbar" aria-label="نسبة التوافق" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + m.score + '"><span style="width:' + m.score + '%"></span></div>'
                 : '<p class="muted mb-14"><a href="#/register">اكتب تخصصك ومهاراتك</a> لتعرف نسبة توافقك مع هذه الوظيفة.</p>') +
               '<ul class="facts">' +
-                '<li><span>المصدر</span><strong>' + esc(j.direct ? 'إعلان مباشر من الجهة' : j.source) + '</strong></li>' +
+                '<li><span>المصدر</span><strong>' + (j.direct ? 'إعلان مباشر من الجهة' : sourceHtml(j)) + '</strong></li>' +
                 '<li><span>الجهة</span><strong><bdi>' + esc(j.company) + '</bdi></strong></li>' +
                 '<li><span>المدينة</span><strong>' + esc(j.city) + '</strong></li>' +
                 '<li><span>نوع العقد</span><strong>' + esc(j.contract_type) + '</strong></li>' +

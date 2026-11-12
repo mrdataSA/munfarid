@@ -66,6 +66,54 @@ try:
         check("snapshot is read-only", True)
     check("catalog works on the snapshot", catalog.find("j1") is not None)
     config.SNAPSHOT_DIR = ""
+
+    # --- relay sites: official apply link from the feed, Jadarat relays marked and merged
+    from collectors import base, rss
+    feed = """<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>t</title>
+<item><title>وزارة تعلن وظائف إدارية</title><link>https://relay.example/1</link><pubDate>Thu, 12 Nov 2026 06:00:00 +0000</pubDate>
+<category>وظائف حكومية</category>
+<content:encoded><![CDATA[<p>تعلن الوزارة عن وظائف إدارية.</p><a href="https://relay.example/tag/x">وسم</a>
+<a href="https://jadarat.sa/JobDetails?Param=Q1">رابط التقديم</a>]]></content:encoded></item>
+<item><title>دورة مجانية في الإكسل</title><link>https://relay.example/2</link>
+<category>كورسات مجانية</category><content:encoded><![CDATA[<a href="https://x.example">التسجيل</a>]]></content:encoded></item>
+</channel></rss>"""
+    real_fetch = base.fetch
+    base.fetch = lambda url, **kw: feed
+    try:
+        got = rss.collect({"key": "relay", "name": "ناقل", "url": "https://relay.example/feed",
+                           "apply_from_feed": True, "category_exclude": ["كورسات"]})
+    finally:
+        base.fetch = real_fetch
+    check("relay feed: courses excluded", [i["title"] for i in got] == ["وزارة تعلن وظائف إدارية"], got)
+    check("relay feed: official apply link taken from the post",
+          got and got[0].get("apply_url") == "https://jadarat.sa/JobDetails?Param=Q1", got)
+    rel = runner._to_job({"key": "relay", "name": "ناقل"}, got[0])
+    check("relay job: marked as relayed from Jadarat", rel and rel.get("via_jadarat") is True, rel)
+    own = {"id": "jad1", "title": "أخصائي إداري", "company": "وزارة", "city": "الرياض", "source": "جدارات",
+           "url": "https://jadarat.sa/JobDetails?Param=Q1", "posted_date": "2026-11-12"}
+    storage.write("jobs", [own])
+    added = catalog.merge_collected([rel])
+    kept = storage.read("jobs")
+    check("relay job: same Jadarat ad is not added twice", added == [] and len(kept) == 1
+          and kept[0].get("also_on") == ["ناقل"], kept)
+
+    # portal pages (ExploreJobs) are shared by many posts: they never merge different jobs
+    def relay(i, link):
+        return {"id": f"r{i}", "title": f"وظيفة {i}", "company": f"جهة {i}", "city": "الرياض", "source": "ناقل",
+                "url": f"https://relay.example/{i}", "apply_url": link, "via_jadarat": True,
+                "posted_date": "2026-11-12"}
+    storage.write("jobs", [])
+    added = catalog.merge_collected([relay(1, "https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1"),
+                                     relay(2, "https://jadarat.sa/Jadarat/ExploreJobs?JobTab=1")])
+    check("relay jobs: a shared portal link does not merge them", len(added) == 2, added)
+    # the original arrives after its relay: the original is kept, the relay noted
+    storage.write("jobs", [relay(3, "https://jadarat.sa/JobDetails?Param=Z9")])
+    orig = dict(own, id="jad9", url="https://jadarat.sa/JobDetails?Param=Z9")
+    added = catalog.merge_collected([orig])
+    kept = storage.read("jobs")
+    check("original after relay: original kept, relay noted, no new alert",
+          added == [] and [j["id"] for j in kept] == ["jad9"] and kept[0].get("also_on") == ["ناقل"], kept)
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

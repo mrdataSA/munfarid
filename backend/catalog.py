@@ -97,6 +97,22 @@ def _url_key(url):
     return canon
 
 
+JADARAT_SOURCE = "جدارات"
+
+
+def _jadarat_ad_key(job):
+    """The Jadarat ad page a relayed job links to (JobDetails?Param=...), else ''. Portal pages
+    such as ExploreJobs are shared by many posts and must never merge them."""
+    from urllib.parse import parse_qs, urlsplit
+    if not job.get("via_jadarat"):
+        return ""
+    link = job.get("apply_url") or ""
+    parts = urlsplit(link)
+    if "jobdetails" not in parts.path.lower() or not parse_qs(parts.query).get("Param"):
+        return ""
+    return _url_key(link)
+
+
 def merge_collected(new_jobs):
     """Insert collected jobs, dedupe (id, then cross-source merge key), prune.
 
@@ -108,16 +124,31 @@ def merge_collected(new_jobs):
         by_merge = {j["merge_key"]: j for j in jobs if j.get("merge_key")}
         by_url = {}
         for j in jobs:
-            key = _url_key(j.get("url"))
-            if key:
-                by_url.setdefault(key, j)
+            for key in (_url_key(j.get("url")), _jadarat_ad_key(j)):
+                if key:
+                    by_url.setdefault(key, j)
         for job in new_jobs:
             if not job or normalize.is_expired(job, config.JOB_MAX_AGE_DAYS):
                 continue
             url_key = _url_key(job.get("url"))
+            # a relay of a Jadarat ad links that ad's own page: same page = same job
+            jad_key = _jadarat_ad_key(job)
             existing = (by_id.get(job["id"])
                         or (by_merge.get(job["merge_key"]) if job.get("merge_key") else None)
-                        or (by_url.get(url_key) if url_key else None))
+                        or (by_url.get(url_key) if url_key else None)
+                        or (by_url.get(jad_key) if jad_key else None))
+            if existing and existing.get("via_jadarat") and job.get("source") == JADARAT_SOURCE \
+                    and not job.get("via_jadarat"):
+                # the original Jadarat ad arrived after its relay: keep the original, note the relay
+                # (not counted as new, so nobody is alerted twice)
+                job["also_on"] = [s for s in existing.get("also_on") or [] if s != job["source"]][:7] + [existing["source"]]
+                jobs[jobs.index(existing)] = job
+                by_id.pop(existing["id"], None)
+                by_id[job["id"]] = job
+                for index in (by_url, by_merge):
+                    for k in [k for k, v in index.items() if v is existing]:
+                        index[k] = job
+                continue
             if existing:
                 if job.get("apply_url") and not existing.get("apply_url") and existing["source"] == job["source"]:
                     existing["apply_url"] = job["apply_url"]
@@ -132,6 +163,8 @@ def merge_collected(new_jobs):
                 by_merge[job["merge_key"]] = job
             if url_key:
                 by_url.setdefault(url_key, job)
+            if jad_key:
+                by_url.setdefault(jad_key, job)
             added.append(job)
         # Prune expired and cap size (keep newest)
         keep = [j for j in jobs if not normalize.is_expired(j, config.JOB_MAX_AGE_DAYS)]

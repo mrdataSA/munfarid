@@ -31,7 +31,7 @@ import re
 from datetime import datetime, timezone
 from urllib.parse import quote, urljoin, urlsplit
 
-from . import base, dom, html_list, rss
+from . import base, dom, html_list, origin, rss
 
 log = logging.getLogger("rizq.collect.ats")
 
@@ -430,6 +430,8 @@ def jsonld(emp, cap):
                         # facts_only: the site's terms forbid copying its content, so keep
                         # only the facts (title, company, city, date) plus the link back
                         "raw_text": title if emp.get("facts_only") else (desc[:3000] or title),
+                        # a relay's page links the official apply page: a link is a fact, not copied text
+                        "apply_url": origin.pick(page, link) if emp.get("apply_from_page") else "",
                         "needs_ai": False})
             break
     return out

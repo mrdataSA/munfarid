@@ -1807,6 +1807,7 @@
   "interval": 3.0,
   "source_label": "أي وظيفة (ewdifh.com)",
   "facts_only": true,
-  "verified": "2026-11-10"
+  "verified": "2026-11-10",
+  "apply_from_page": true
  }
 ]

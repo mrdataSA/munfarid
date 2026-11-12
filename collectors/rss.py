@@ -2,7 +2,7 @@
 
 import xml.etree.ElementTree as ET
 
-from . import base
+from . import base, origin
 
 NS = {
     "atom": "http://www.w3.org/2005/Atom",
@@ -55,8 +55,14 @@ def collect(source):
     wanted = source.get("category_filter")  # e.g. general news feeds: keep only the jobs category
     if wanted:
         items = [it for it in items if any(wanted in (c or "") for c in it.get("categories", []))]
+    unwanted = source.get("category_exclude") or []   # e.g. a relay's "free courses" posts
+    if unwanted:
+        items = [it for it in items if not any(u in (c or "") for c in it.get("categories", []) for u in unwanted)]
     for it in items:
         it["needs_ai"] = False
+        if source.get("apply_from_feed") and it.get("raw_text") and it.get("url"):
+            # relay sites put the official apply link in the post itself: no extra request
+            it["apply_url"] = origin.pick(it["raw_text"], it["url"])
         cats = " ".join(it.get("categories", []))
         if "تدريب" in cats and "تدريب" not in it["title"]:
             it["raw_text"] = (it.get("raw_text") or "") + " (تدريب تعاوني)"

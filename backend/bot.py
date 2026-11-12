@@ -64,9 +64,15 @@ BTN_TITLES = "✏️ مسمياتي"
 BTN_CV = "📄 سيرتي"
 BTN_SOURCES = "📚 المصادر"
 BTN_SETTINGS = "⚙️ التنبيهات"
+BTN_HELP = "❓ طريقة الاستخدام"
 MAIN_KB = {"keyboard": [[{"text": BTN_JOBS}, {"text": BTN_TITLES}],
-                        [{"text": BTN_CV}, {"text": BTN_SOURCES}, {"text": BTN_SETTINGS}]],
+                        [{"text": BTN_CV}, {"text": BTN_SOURCES}],
+                        [{"text": BTN_SETTINGS}, {"text": BTN_HELP}]],
            "resize_keyboard": True, "is_persistent": True}
+# Tap-to-try titles on the welcome message (Arabic and English work the same)
+EXAMPLES = ["محاسب", "مهندس مدني", "ممرض", "Data Analyst"]
+SUGGEST_MAX = 4
+JADARAT = "جدارات"
 
 MODES = {"daily": "مرة يومياً", "instant": "فور نزول الوظيفة", "off": "متوقفة"}
 CITIES = [c for c in normalize.CITY_ALIASES if c != normalize.REMOTE][:14]
@@ -75,7 +81,14 @@ CITIES = [c for c in normalize.CITY_ALIASES if c != normalize.REMOTE][:14]
 FILLER = {normalize.norm(w) for w in (
     "ابي", "ابغى", "ابغا", "ابا", "أبي", "اريد", "أريد", "ابحث", "أبحث", "دور", "ودي", "لي", "عن", "على",
     "وظيفة", "وظيفه", "وظائف", "وظايف", "شغل", "عمل", "مطلوب", "في", "فى", "بمدينة", "مدينة", "job", "jobs",
-    "find", "me", "a", "in", "أو", "او", "و", "or", "and")}
+    "find", "me", "a", "in", "أو", "او", "و", "or", "and", "مجال", "بمجال", "تخصص", "بتخصص", "احتاج", "أحتاج",
+    "ممكن", "لو", "سمحت", "تكفى", "ابغي", "اشتغل", "كـ", "i", "im", "i'm", "am", "looking", "look", "for",
+    "want", "need", "searching", "search", "position", "role", "vacancy", "vacancies", "an", "the", "please",
+    "any", "as", "work")}
+# A message that is only a greeting or thanks (it names no job)
+GREETING_RE = re.compile(r"^\W*(?:السلام عليكم(?: ورحمه الله(?: وبركاته)?)?|سلام|مرحبا|هلا|اهلا|اهلين|صباح الخير|"
+                         r"مساء الخير|شكرا|يعطيك العافيه|الله يعطيك العافيه|جزاك الله خير|hi|hello|hey|"
+                         r"thanks|thank you|good morning|good evening)\W*$", re.I)
 REMOTE_RE = re.compile(r"(?:^|\s)(?:عن\s*بعد|عن\s*بعـد|من\s*المنزل|remote(?:ly)?|work\s*from\s*home|wfh)(?=\s|$)", re.I)
 DIGIT_RE = re.compile(r"[0-9]{1,3}")
 
@@ -269,7 +282,7 @@ def search(sub, jobs=None, all_if_no_titles=False):
     city = sub.get("city") or ""
     out = []
     for j in (jobs if jobs is not None else _jobs()):
-        if srcs and j.get("source") not in srcs:
+        if srcs and j.get("source") not in srcs and not (j.get("via_jadarat") and JADARAT in srcs):
             continue
         if city and j.get("city") not in (city, normalize.REMOTE, "", None):
             continue
@@ -328,14 +341,23 @@ def split_query(text):
 # ---------------------------------------------------------------- messages
 
 def card(job):
-    url = job.get("apply_url") or job.get("url") or ""
+    """Title, company / city / age, then the direct link: the original apply page when the
+    re-posting site gave one, else the ad itself in its source."""
+    apply = job.get("apply_url") or ""
+    url = apply or job.get("url") or ""
     meta = [x for x in (job.get("company"), job.get("city"), _ago(job.get("posted_date"))) if x]
     lines = [f"<b>{esc(job.get('title'))}</b>"]
     if meta:
         lines.append(esc(" · ".join(meta)))
     src = job.get("source") or ""
     if url.startswith(("https://", "http://")):
-        lines.append(f'<a href="{html.escape(url, quote=True)}">الإعلان الأصلي في {esc(src)}</a>')
+        href = html.escape(url, quote=True)
+        if job.get("via_jadarat") and apply:
+            lines.append(f'🔗 <a href="{href}">رابط التقديم في جدارات</a> · نقلاً عن {esc(src)}')
+        elif apply:
+            lines.append(f'🔗 <a href="{href}">رابط التقديم</a> · نقلاً عن {esc(src)}')
+        else:
+            lines.append(f'🔗 <a href="{href}">الإعلان الأصلي في {esc(src)}</a>')
     elif url.startswith("mailto:"):  # direct posts: Telegram links don't support mailto
         lines.append(f"التقديم بالبريد مباشرة: {esc(url[7:])}")
     return "\n".join(lines)
@@ -364,24 +386,36 @@ def _join_cards(parts):
 
 HELP = (
     "أهلاً بك في مُنْفَرِد 👋\n"
-    "نجمع لك أخبار الوظائف في السعودية من كل مكان، مجاناً، ونرسل لك رابط الإعلان الأصلي لكل وظيفة.\n\n"
-    "<b>كيف أبدأ؟</b>\n"
-    "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b>\n"
-    "يمكنك كتابة أكثر من مسمى وبينها فاصلة، فالوظيفة الواحدة قد تُنشر بأسماء مختلفة.\n\n"
-    "أو أرسل سيرتك الذاتية (PDF أو Word) لنقترح عليك الوظائف التي تناسب خبرتك حتى لو اختلف اسمها.\n\n"
-    f"{BTN_JOBS}: كل الوظائف الحالية لمسمياتك\n"
-    f"{BTN_TITLES}: إضافة مسمى أو حذفه\n"
-    f"{BTN_CV}: قراءة سيرتك واقتراح وظائف\n"
-    f"{BTN_SOURCES}: كل المصادر أو مصادر تختارها\n"
-    f"{BTN_SETTINGS}: متى تصلك الوظائف الجديدة، والمدينة\n"
-    "/delete: حذف كل بياناتك")
+    "نجمع لك أخبار الوظائف في السعودية من كل المصادر، مجاناً، وكل وظيفة معها رابطها الأصلي لتقدّم منه مباشرة.\n\n"
+    "<b>كيف يعمل؟</b>\n"
+    "1️⃣ <b>ابحث:</b> اكتب المسمى الوظيفي بالعربي أو الإنجليزي، مثل: محاسب، مهندس مدني، Data Analyst\n"
+    "أو اكتب طلبك بجملة، مثل: «أريد وظيفة محاسب في جدة»\n"
+    "2️⃣ <b>النتائج فوراً:</b> نعرض لك كل الوظائف الحالية، الأحدث أولاً، ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة.\n"
+    f"3️⃣ <b>الاشتراك تلقائي ومجاني:</b> أي وظيفة جديدة تناسب مسمياتك تصلك هنا، مرة يومياً في الساعة "
+    f"{config.BOT_DIGEST_HOUR} صباحاً، أو فور نزولها (تختار من {BTN_SETTINGS}).\n"
+    "4️⃣ <b>قدّم من المصدر:</b> اضغط على الرابط تحت الوظيفة لتفتح إعلانها الأصلي وتقدّم هناك. "
+    "مُنْفَرِد ينقل الخبر فقط، ولا يستقبل طلبات التوظيف.\n"
+    "💡 <b>اقتراحات:</b> بعد كل بحث نقترح عليك مسميات قريبة فيها وظائف الآن، تضيفها بضغطة.\n\n"
+    "📄 أو أرسل سيرتك الذاتية (PDF أو Word) ونستخرج منها المسميات التي تناسب خبرتك.\n\n"
+    f"{BTN_JOBS} وظائفك الحالية، {BTN_TITLES} إضافة مسمى أو حذفه، {BTN_SETTINGS} التوقيت والمدينة.\n"
+    "/stop إيقاف التنبيهات، /delete حذف كل بياناتك.\n\n"
+    "English works too: type a job title such as <b>accountant</b> or <b>nurse in Jeddah</b>.")
 
 CV_PROMPT = (
     "أرسل سيرتك الذاتية كملف (PDF أو Word)، أو اكتب هنا نبذة عنك: دوراتك وخبراتك وما تجيده.\n\n"
     "🔒 لا نحتاج اسمك ولا جوالك ولا هويتك ولا عنوانك. ونحذف أي بيانات شخصية تلقائياً قبل القراءة، "
     "ولا نحفظ الملف ولا النص، بل نحفظ فقط المسميات والمهارات المستخرجة منه.")
 
-START_HINT = "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b>\nأو أرسل سيرتك الذاتية."
+START_HINT = "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>\nأو أرسل سيرتك الذاتية."
+NOT_A_JOB = ("أنا مُنْفَرِد، أبحث لك عن الوظائف 🙂\n"
+             "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>، "
+             f"أو اضغط {BTN_HELP} لتعرف كيف أعمل.")
+
+
+def _examples_kb():
+    return {"inline_keyboard": [[{"text": "🔎 " + e, "callback_data": f"try:{i}"} for i, e in enumerate(EXAMPLES[:2])],
+                                [{"text": "🔎 " + e, "callback_data": f"try:{i + 2}"}
+                                 for i, e in enumerate(EXAMPLES[2:4])]]}
 
 
 def _prune_sessions(ss):
@@ -451,7 +485,95 @@ def _scope_text(sub):
     return "، ".join(bits)
 
 
-def show_jobs(chat_id):
+_SHORT_CUT_RE = re.compile(r"\s+[-–|/]\s+|\s*[(\[]|،|,|\s+(?:in|at|for|لدى|في|بمدينة|بشركة)\s+", re.I)
+
+
+def _short_title(title):
+    """'Senior Accountant - Riyadh (Full time)' -> 'Senior Accountant'; '' for a post that names no job."""
+    t = titles.clean_title(_SHORT_CUT_RE.split(title or "", maxsplit=1)[0])
+    tk = titles.tokens(t)
+    if not tk or len(tk) > 4 or titles.GENERIC_TITLE_RE.search(normalize.norm(t)) or not titles.useful(tk):
+        return ""
+    return t
+
+
+def suggestions(sub, found, jobs, limit=SUGGEST_MAX):
+    """Job titles near the person's own that have jobs now (in their sources and city): [(title, count)].
+    From the AI's related titles, then from the commonest titles in the same specialty as their results."""
+    mine = sub.get("titles") or []
+    query = _query_of(sub)
+    cands = [r for t in mine for r in titles.related(t["title"])]
+    from_ai = set(cands)
+    found_ids = {j.get("id") for j in found}
+    # the specialty of the jobs whose TITLE matched (not posts found in their text), and only a
+    # specialty that is a real share of them: one stray result must not steer the suggestions
+    named = [j for j in found if query and titles.match(j, query) == 2]
+    specs = Counter(j.get("specialty") for j in named if j.get("specialty") not in (None, "", "أخرى"))
+    top = {sp for sp, n in specs.items() if n >= max(2, 0.25 * len(named))}
+    if top:
+        counts, label = Counter(), {}
+        for j in jobs:
+            if j.get("specialty") in top and j.get("id") not in found_ids:
+                st = _short_title(j.get("title"))
+                tk = titles.tokens(st)
+                if 2 <= len(tk) <= 3:   # one word ("Director") is too vague, a long title too specific
+                    k = " ".join(tk)
+                    counts[k] += 1
+                    label.setdefault(k, st)
+        cands += [label[k] for k, n in counts.most_common(8) if n >= 3]
+    seen = {" ".join(titles.tokens(t["title"])) for t in mine}
+    out, shown, tried, from_data = [], [], 0, 0
+    for c in cands:
+        k = " ".join(titles.tokens(c))
+        if not k or k in seen:
+            continue
+        seen.add(k)
+        if query and titles.match({"id": None, "title": c}, query):
+            continue   # already found by the person's own titles
+        if c not in from_ai and from_data >= 2:
+            continue   # titles taken from the data are noisier: at most two of them
+        tried += 1
+        if tried > 12:   # each check scans the catalog once
+            break
+        probe = dict(sub, titles=[{"title": c, "variants": [c] + titles.builtin_variants(c)}])
+        ids = {j.get("id") for j in search(probe, jobs)} - found_ids
+        # the same jobs under another name ("مهندس كهرباء" / "Electrical Engineer"): offer one
+        if not ids or any(len(ids & o) >= 0.8 * min(len(ids), len(o)) for o in shown):
+            continue
+        shown.append(ids)
+        out.append((c, len(ids)))
+        from_data += c not in from_ai
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _send_suggestions(chat_id, sugg):
+    if not sugg:
+        return
+    with storage.edit("bot_sessions") as ss:
+        s = ss.setdefault(_key(chat_id), {})
+        known = s.get("sug") if isinstance(s.get("sug"), dict) else {}
+        known.update({_h(t): t for t, _ in sugg})   # older suggestion messages keep working
+        s["sug"], s["ts"] = dict(list(known.items())[-40:]), time.time()
+    kb = [[{"text": f"➕ {t[:32]} ({_ar_jobs(n)})", "callback_data": "sug:" + _h(t)}] for t, n in sugg]
+    tg.send(chat_id, "💡 <b>مسميات قريبة فيها وظائف الآن.</b> اضغط على أي مسمى لإضافته إلى مسمياتك وعرض وظائفه:",
+            reply_markup={"inline_keyboard": kb})
+
+
+def _sub_note(sub):
+    mode = sub.get("mode")
+    if mode == "instant":
+        when = "فور نزولها"
+    elif mode == "daily":
+        when = f"مرة يومياً في الساعة {config.BOT_DIGEST_HOUR} صباحاً"
+    else:
+        return f"🔕 التنبيهات متوقفة الآن. فعّلها من {BTN_SETTINGS} لتصلك الوظائف الجديدة."
+    return (f"🔔 <b>تم اشتراكك مجاناً:</b> كل وظيفة جديدة تناسب مسمياتك تصلك هنا {when}، مع رابطها الأصلي.\n"
+            f"لتغيير التوقيت أو المدينة: {BTN_SETTINGS}")
+
+
+def show_jobs(chat_id, suggest=False):
     sub = get_sub(chat_id)
     if not sub or not sub.get("titles"):
         tg.send(chat_id, START_HINT, reply_markup=MAIN_KB)
@@ -468,9 +590,12 @@ def show_jobs(chat_id):
             _mark_sent(s, seen_new[:SENT_KEEP])
     names = "، ".join(t["title"] for t in sub["titles"])
     if not found:
+        later = ("وسنرسل لك أي وظيفة مناسبة فور نزولها." if sub.get("mode") in ("daily", "instant")
+                 else f"فعّل التنبيهات من {BTN_SETTINGS} لتصلك أي وظيفة مناسبة فور نزولها.")
         tg.send(chat_id, f"لا توجد الآن وظائف لـ: {esc(names)} ({esc(_scope_text(sub))}).\n"
-                "نجمع الوظائف من كل المصادر على مدار الساعة، وسنرسل لك أي وظيفة مناسبة فور نزولها.\n"
+                f"نجمع الوظائف من كل المصادر على مدار الساعة، {later}\n"
                 "يمكنك إضافة مسميات أخرى بنفس المعنى، أو إرسال سيرتك لنقترح عليك وظائف.", reply_markup=MAIN_KB)
+        _send_suggestions(chat_id, suggestions(sub, found, jobs))
         return
     header = f"🔎 وجدنا {_ar_jobs(len(found))} لـ: <b>{esc(names)}</b>\n{esc(_scope_text(sub))}، الأحدث أولاً."
     if len(found) > MAX_RESULTS:
@@ -481,14 +606,20 @@ def show_jobs(chat_id):
         else f"التنبيهات متوقفة. فعّلها من {BTN_SETTINGS}."))
     sid = _session_set(chat_id, [j["id"] for j in found], footer)
     send_page(chat_id, header, sid=sid, by_id={j["id"]: j for j in found})
+    if suggest:
+        _send_suggestions(chat_id, suggestions(sub, found, jobs))
 
 
-def add_titles(chat_id, text):
-    wanted, city = split_query(text)
+def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False):
+    """Add the titles in a message (or `wanted` / `city` read by the AI) and show the jobs.
+    ai_charged: this message already paid one AI use (reading it): the expansion is free."""
+    if wanted is None:
+        wanted, city = split_query(text)
     if not wanted and not city:
         tg.send(chat_id, "اكتب المسمى الوظيفي، مثل: <b>محاسب</b> أو <b>مهندس مدني</b>", reply_markup=MAIN_KB)
         return
     sub = get_sub(chat_id) or {}
+    first = not sub.get("titles")
     have = {normalize.norm(t["title"]) for t in sub.get("titles") or []}
     new = [t for t in wanted if normalize.norm(t) not in have]
     room = MAX_TITLES - len(sub.get("titles") or [])
@@ -501,7 +632,7 @@ def add_titles(chat_id, text):
     expanded = {}
     if new:
         tg.quiet("sendChatAction", chat_id=chat_id, action="typing")
-        use_ai = titles.needs_ai(new) and ai.enabled() and _ai_allowed(chat_id)
+        use_ai = titles.needs_ai(new) and ai.enabled() and (ai_charged or _ai_allowed(chat_id))
         expanded = titles.expand(new, use_ai=use_ai)
     with _edit_sub(chat_id) as s:
         have = {normalize.norm(t["title"]) for t in s["titles"]}
@@ -524,9 +655,46 @@ def add_titles(chat_id, text):
         msg.append(f"🏠 نعرض لك الوظائف عن بعد. يمكنك تغيير ذلك من {BTN_SETTINGS}.")
     elif city:
         msg.append(f"📍 المدينة: {esc(city)} (مع الوظائف عن بعد). يمكنك تغييرها من {BTN_SETTINGS}.")
+    if first and new:
+        msg.append("\n" + _sub_note(get_sub(chat_id) or {}))
     if msg:
         tg.send(chat_id, "\n".join(msg))
-    show_jobs(chat_id)
+    show_jobs(chat_id, suggest=bool(new))
+
+
+def _needs_reading(text, wanted):
+    """Plain title lists are read locally; sentences, questions and odd results go to the AI."""
+    if "?" in text or "؟" in text or not wanted:
+        return True
+    return len(text.split()) >= 6 or any(len(titles.tokens(t)) >= 4 for t in wanted)
+
+
+def handle_text(chat_id, text):
+    """A free-text message: job titles (Arabic, English or both), a sentence asking for jobs,
+    a greeting, or a question."""
+    if GREETING_RE.match(normalize.norm(text)):
+        sub = get_sub(chat_id) or {}
+        return tg.send(chat_id, "أهلاً بك 👋\n" + START_HINT,
+                       reply_markup=MAIN_KB if sub.get("titles") else _examples_kb())
+    wanted, city = split_query(text)
+    if _needs_reading(text, wanted):
+        req, charged = titles.cached_request(text), False
+        if req is None and ai.enabled() and _ai_allowed(chat_id):
+            tg.quiet("sendChatAction", chat_id=chat_id, action="typing")
+            req, charged = titles.parse_request(text), True
+        if req is not None:
+            if req["intent"] == "help" and not req["titles"]:
+                return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
+            if not req["titles"]:
+                return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
+            ai_city = normalize.REMOTE if req.get("remote") else normalize.detect_city(req.get("city") or "")
+            return add_titles(chat_id, wanted=req["titles"], city=ai_city or city, ai_charged=charged)
+        # no AI now: a question or a long sentence must not become a saved "job title"
+        if "?" in text or "؟" in text or any(len(titles.tokens(t)) >= 4 for t in wanted):
+            return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
+    if not wanted and not city:
+        return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
+    return add_titles(chat_id, wanted=wanted, city=city)
 
 
 def titles_menu(chat_id):
@@ -547,7 +715,11 @@ def sources_menu(chat_id, rebuild=True):
     """rebuild=False keeps the button order of the menu on screen (so a tap toggles what it shows)."""
     sub = get_sub(chat_id) or {}
     chosen = list(sub.get("sources") or [])
-    counts = Counter(j.get("source") for j in _jobs() if j.get("source"))
+    all_jobs = _jobs()
+    counts = Counter(j.get("source") for j in all_jobs if j.get("source"))
+    relayed = sum(1 for j in all_jobs if j.get("via_jadarat") and j.get("source") != JADARAT)
+    if relayed:
+        counts[JADARAT] += relayed
     names = (storage.read("bot_sessions").get(_key(chat_id)) or {}).get("src") if not rebuild else None
     if not names:
         names = [n for n, _ in counts.most_common(30)]
@@ -717,6 +889,12 @@ def handle_private(msg):
         with _edit_sub(chat_id) as s:
             if s.get("mode") == "off":
                 _set_mode(s, "daily")
+            new_user = not s.get("titles")
+        tg.send(chat_id, HELP, reply_markup=MAIN_KB)
+        if new_user:
+            tg.send(chat_id, "جرّب الآن، اضغط على مثال أو اكتب المسمى الذي تبحث عنه:", reply_markup=_examples_kb())
+        return
+    if cmd == "/help" or text == BTN_HELP:
         return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
     if cmd == "/jobs" or text == BTN_JOBS:
         return show_jobs(chat_id)
@@ -751,7 +929,7 @@ def handle_private(msg):
     sub = get_sub(chat_id) or {}
     if (sub.get("awaiting") == "cv" and len(text) >= 40) or _looks_like_cv(text):
         return process_cv(chat_id, text)
-    return add_titles(chat_id, text)
+    return handle_text(chat_id, text)
 
 
 def _show(chat_id, message_id, menu):
@@ -778,6 +956,15 @@ def handle_callback(cb):
         return send_page(chat_id, sid=data[5:] if data.startswith("more:") else None)
     if data == "wipe:no":
         return _show(chat_id, mid, ("لم يُحذف شيء.", None))
+    if data.startswith("try:"):
+        i = _index(data[4:], len(EXAMPLES))
+        return add_titles(chat_id, wanted=[EXAMPLES[i]], city="") if i is not None else None
+    if data.startswith("sug:"):
+        known = (storage.read("bot_sessions").get(_key(chat_id)) or {}).get("sug")
+        title = known.get(data[4:]) if isinstance(known, dict) else None
+        if not title:
+            return tg.send(chat_id, f"انتهت صلاحية هذا الاقتراح. اضغط {BTN_JOBS} للبحث من جديد.", reply_markup=MAIN_KB)
+        return add_titles(chat_id, wanted=[title], city="")
     if not get_sub(chat_id):  # a button from before /delete: nothing to change
         return tg.send(chat_id, START_HINT, reply_markup=MAIN_KB)
     if data.startswith("del:"):

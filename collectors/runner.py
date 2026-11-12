@@ -12,6 +12,7 @@ import re
 import threading
 import time
 import traceback
+from urllib.parse import urlsplit
 
 from backend import ai, bot, catalog, config, enrich, normalize, notifier, storage
 
@@ -129,11 +130,21 @@ def _to_job(source, item, ai_result=None):
     return _with_apply(job, item)
 
 
+def _jadarat_link(url):
+    host = urlsplit(url or "").netloc.lower().split(":")[0]
+    return host == "jadarat.sa" or host.endswith(".jadarat.sa")
+
+
 def _with_apply(job, item):
-    """Attach the original apply link found by collectors.origin (http/https only)."""
+    """Attach the original apply link found by collectors.origin (http/https only).
+    A relayed post whose apply link goes to Jadarat is marked "via_jadarat" (shown as
+    "جدارات (عبر ناقل)"): Jadarat refuses cloud servers, so its jobs reach us through
+    public sites that re-post them, never by fetching Jadarat itself."""
     link = str(item.get("apply_url") or "").strip()
     if job and link.lower().startswith(("http://", "https://")) and link != job.get("url"):
         job["apply_url"] = link[:1000]
+        if _jadarat_link(link) and not _jadarat_link(job.get("url")):
+            job["via_jadarat"] = True
     return job
 
 
