@@ -14,3 +14,6 @@ __pycache__/
 *.pyc
 
 .vercel
+
+# Local virtual environment (created by start.bat)
+.venv/
