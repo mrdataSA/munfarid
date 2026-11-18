@@ -2,6 +2,7 @@
 filters on every column, right-to-left sheets (Arabic), numbers kept as numbers."""
 
 import io
+import math
 import re
 import zipfile
 from xml.sax.saxutils import escape
@@ -23,11 +24,10 @@ def _cell(ref, v, style=0):
     st = f' s="{style}"' if style else ""
     if isinstance(v, bool):
         v = "نعم" if v else ""
-    if isinstance(v, (int, float)) and v == v:
+    if isinstance(v, (int, float)) and math.isfinite(v):
         return f'<c r="{ref}"{st}><v>{v}</v></c>'
-    text = _BAD.sub("", "" if v is None else str(v))[:MAX_CELL]
-    if text.startswith(("=", "+", "-", "@")):
-        text = "'" + text   # never a formula (CSV/Excel injection)
+    # an inline string is never evaluated, so "=..." stays text (no formula injection, no visible ')
+    text = _BAD.sub("", "" if v is None or isinstance(v, (int, float)) and not math.isfinite(v) else str(v))[:MAX_CELL]
     return f'<c r="{ref}" t="inlineStr"{st}><is><t xml:space="preserve">{escape(text)}</t></is></c>'
 
 

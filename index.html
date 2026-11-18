@@ -62,6 +62,7 @@
       <!-- Home -->
       <section id="page-home" class="page">
         <div class="status-row" id="status-row"></div>
+        <p id="problems" class="banner" hidden></p>
         <div class="kpis" id="kpis"></div>
         <div class="grid-2">
           <article class="card"><h3>الوظائف الجديدة يومياً <span class="muted small">آخر 30 يوماً</span></h3><div id="ch-jobs-day" class="chart"></div></article>
@@ -154,6 +155,22 @@
       </section>
     </main>
   </div>
+  <!-- Details: the jobs behind any number (source, link before and after, dates) -->
+  <dialog id="drill" class="drill" aria-labelledby="drill-title">
+    <div class="drill-head">
+      <h3 id="drill-title"></h3>
+      <div class="drill-actions">
+        <button id="drill-export" class="btn btn-small btn-gold" type="button">تحميل Excel</button>
+        <button id="drill-close" class="btn btn-small btn-ghost" type="button" aria-label="إغلاق">✕</button>
+      </div>
+    </div>
+    <div class="drill-filter">
+      <input id="drill-q" type="search" placeholder="ابحث داخل هذه القائمة…">
+      <span id="drill-total" class="chip"></span>
+    </div>
+    <div class="table-wrap drill-body"><table class="table" id="drill-table"></table></div>
+    <div class="pager" id="drill-pager"></div>
+  </dialog>
   <div id="tip" class="tip" role="tooltip" hidden></div>
   <script src="js/dash.js"></script>
 </body>

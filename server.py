@@ -290,23 +290,24 @@ class Handler(SimpleHTTPRequestHandler):
         q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "", keep_blank_values=False)
         return {k: v for k, v in q.items()}
 
-    def _go(self, path):
-        """/j/<job>.<person>: count the click for the owner's dashboard, then go to the original link."""
+    def _go(self, path, count=True):
+        """/j/<job>.<person>: count the click for the owner's dashboard, then go to the original link
+        (never a relay page: a job whose original link is not known yet goes to the bot)."""
         m = GO_RE.match(path)
         target, job = "", None
         if m:
             job = catalog.find(m.group(1))
             if job is None and config.DATABASE_URL:
-                job = analytics.jobs_rows(max_age=60).get(m.group(1))
-            target = normalize.original_link(job or {}) or (job or {}).get("url") or ""
+                job = analytics.job_row(m.group(1))
+            target = normalize.original_link(job or {})
         if not target.startswith(("https://", "http://")) or any(c in target for c in "\r\n"):
             target = f"https://t.me/{config.TELEGRAM_BOT_USERNAME}" if config.TELEGRAM_BOT_USERNAME else ""
             if not target:
                 self.send_error(404)
                 return
-        else:
-            analytics.log_event("click", m.group(2), job=m.group(1), title=(job or {}).get("title", "")[:120],
-                                source=(job or {}).get("source", ""), city=(job or {}).get("city", ""))
+        elif count:
+            analytics.log_event("click", m.group(2), job=m.group(1), title=((job or {}).get("title") or "")[:120],
+                                source=(job or {}).get("source") or "", city=(job or {}).get("city") or "")
         self.send_response(302)
         self.send_header("Location", target)
         self.send_header("Content-Length", "0")
@@ -333,7 +334,7 @@ class Handler(SimpleHTTPRequestHandler):
         return data
 
     def admin(self):
-        if not config.ADMIN_PASSWORD:
+        if not config.ADMIN_PASSWORD and not owner.owner_chat():   # Telegram login needs no password
             raise ApiError(403, "لوحة الإدارة غير مفعّلة. أضف كلمة مرور الإدارة في إعدادات الخادم (env).")
         if not auth.get_session(self.cookie(auth.COOKIE_ADMIN), "admin"):
             raise ApiError(401, "سجّل الدخول أولاً.")
@@ -351,7 +352,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         path = self.path.split("?", 1)[0]
         if path.startswith("/j/") and method in ("GET", "HEAD"):
-            return self._go(path)
+            return self._go(path, count=method == "GET")   # link previews (HEAD) are not clicks
         if not config.PUBLIC_SITE and path.startswith(PUBLIC_API):
             self._send_json(404, {"ok": False, "error": "غير موجود."})
             return
@@ -568,8 +569,8 @@ def api_tg_login_start(h):
     if auth.login_limiter.blocked(key):
         raise ApiError(429, "محاولات كثيرة. حاول بعد 15 دقيقة.")
     auth.login_limiter.fail(key)       # each ticket counts; a successful login resets it
-    ticket, code = owner.new_ticket()
-    return ok({"ticket": ticket, "code": code, "link": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=login_{ticket}"})
+    ticket, code, bot_token = owner.new_ticket()
+    return ok({"ticket": ticket, "code": code, "link": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=login_{bot_token}"})
 
 
 @route("POST", "/api/admin/tg-login/check")
@@ -584,7 +585,7 @@ def api_tg_login_check(h):
         return ok({"state": state})
     auth.login_limiter.reset("tglogin:" + h.client_ip())
     token = auth.create_session("admin", "owner")
-    analytics.log_event("login", None)
+    analytics.log_event("login", None)   # no person: the reports skip events without one
     try:
         telegram_bot.send(owner.owner_chat(), "🔐 تم تسجيل دخول جديد للوحة مُنْفَرِد الآن. إن لم تكن أنت، أخبرنا فوراً.")
     except Exception:
@@ -602,15 +603,19 @@ def api_admin_owner_link(h):
 
 # ---------------------------------------------------------------- owner dashboard
 
+NONE_VALUE = "__none__"   # the dashboard's value for "not stated" (an empty city or source)
+
+
 def _list(q, key):
-    return [v for x in q.get(key, []) for v in x.split("|") if v][:60]
+    return ["" if v == NONE_VALUE else v for x in q.get(key, []) for v in x.split("|") if v][:60]
 
 
 def _job_filter(q):
     return {"q": (q.get("q") or [""])[0][:100], "cities": _list(q, "city"), "exp": _list(q, "exp"),
             "sources": _list(q, "source"), "kinds": _list(q, "kind"), "status": _list(q, "status") or ["live"],
             "from": (q.get("from") or [""])[0][:10], "to": (q.get("to") or [""])[0][:10],
-            "helper": (q.get("helper") or [""])[0] == "1"}
+            "helper": (q.get("helper") or [""])[0] == "1", "jadarat": (q.get("jadarat") or [""])[0] == "1",
+            "sort": "resolved" if (q.get("sort") or [""])[0] == "resolved" else ""}
 
 
 @route("GET", "/api/admin/dash/overview")

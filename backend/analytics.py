@@ -21,13 +21,14 @@ import re
 import threading
 import time
 from collections import Counter, defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from . import config, normalize, storage
 
 log = logging.getLogger("rizq.analytics")
 
 ARCHIVE_DAYS = 90
+RIYADH = timezone(timedelta(hours=3), "AST")   # Saudi Arabia has no DST; Vercel runs in UTC
 EVENTS_DAYS = 120          # events kept in a dashboard's memory
 LOCAL_EVENTS_MAX = 50000
 BATCH = 1000
@@ -47,6 +48,7 @@ create table if not exists rizq.jobs_all (
   updated_at timestamptz not null default now()
 );
 create index if not exists jobs_all_updated on rizq.jobs_all (updated_at);
+alter table rizq.jobs_all add column if not exists resolved_at timestamptz;
 create table if not exists rizq.events (
   id bigserial primary key,
   ts timestamptz not null default now(),
@@ -61,7 +63,7 @@ revoke all on all sequences in schema rizq from public, anon, authenticated
 
 JOB_COLS = ("id", "title", "company", "city", "specialty", "source", "contract_type", "link_kind", "link_host",
             "url", "apply_url", "via_jadarat", "via_helper", "exp_years", "posted_date", "first_seen", "last_seen",
-            "archived")
+            "archived", "resolved_at")
 
 LINK_KINDS = {
     "direct": "مباشر من المصدر",
@@ -168,9 +170,10 @@ def _job_row(j):
 
 UPSERT = """
 insert into rizq.jobs_all (id, title, company, city, specialty, source, contract_type, link_kind, link_host, url,
-  apply_url, via_jadarat, via_helper, exp_years, posted_date, first_seen, last_seen, updated_at)
+  apply_url, via_jadarat, via_helper, exp_years, posted_date, first_seen, last_seen, updated_at, resolved_at)
 select r.id, r.title, r.company, r.city, r.specialty, r.source, r.contract_type, r.link_kind, r.link_host, r.url,
-  r.apply_url, r.via_jadarat, r.via_helper, r.exp_years, r.posted_date, coalesce(r.collected_at, now()), now(), now()
+  r.apply_url, r.via_jadarat, r.via_helper, r.exp_years, r.posted_date, coalesce(r.collected_at, now()), now(), now(),
+  case when r.link_kind = 'relay_resolved' then now() end
 from jsonb_to_recordset(cast(:rows as jsonb)) as r(id text, title text, company text, city text, specialty text,
   source text, contract_type text, link_kind text, link_host text, url text, apply_url text, via_jadarat boolean,
   via_helper boolean, exp_years int, posted_date date, collected_at timestamptz)
@@ -178,6 +181,8 @@ on conflict (id) do update set title = excluded.title, company = excluded.compan
   specialty = excluded.specialty, link_kind = excluded.link_kind, link_host = excluded.link_host,
   url = excluded.url, apply_url = excluded.apply_url, via_jadarat = excluded.via_jadarat,
   via_helper = rizq.jobs_all.via_helper or excluded.via_helper, exp_years = excluded.exp_years,
+  resolved_at = case when excluded.link_kind <> 'relay_resolved' then null
+                     else coalesce(rizq.jobs_all.resolved_at, now()) end,
   last_seen = now(), updated_at = now()
 where (rizq.jobs_all.title, rizq.jobs_all.city, rizq.jobs_all.specialty, rizq.jobs_all.link_kind,
        rizq.jobs_all.apply_url, rizq.jobs_all.via_jadarat, rizq.jobs_all.exp_years, rizq.jobs_all.company)
@@ -224,7 +229,7 @@ _events = {"rows": [], "last": 0, "at": 0.0}
 
 def _iso(v):
     if isinstance(v, datetime):
-        return v.astimezone().isoformat(timespec="seconds")
+        return v.astimezone(RIYADH).isoformat(timespec="seconds")
     if isinstance(v, date):
         return v.isoformat()
     return v
@@ -236,7 +241,8 @@ def jobs_rows(max_age=5.0):
         out = {}
         for j in storage.read("jobs"):
             r = _job_row(j)
-            r.update(first_seen=j.get("collected_at") or "", last_seen=j.get("collected_at") or "", archived=False)
+            r.update(first_seen=j.get("collected_at") or "", last_seen=j.get("collected_at") or "", archived=False,
+                     resolved_at="")
             out[r["id"]] = r
         return out
     with _lock:
@@ -258,6 +264,18 @@ def jobs_rows(max_age=5.0):
         return new
 
 
+def job_row(job_id):
+    """One job's dashboard row (cloud: a single-row query; local: the store)."""
+    if not _db():
+        return jobs_rows().get(job_id)
+    with _lock:
+        if job_id in _jobs["rows"]:
+            return _jobs["rows"][job_id]
+    _ensure_schema()
+    rows = _pg()._run(f"select {', '.join(JOB_COLS)} from rizq.jobs_all where id = :i", i=job_id)
+    return {c: _iso(v) for c, v in zip(JOB_COLS, rows[0])} if rows else None
+
+
 def events_rows(max_age=3.0):
     """Recent events (EVENTS_DAYS), oldest first: [{"id", "ts", "kind", "who", "data"}]."""
     if not _db():
@@ -274,7 +292,7 @@ def events_rows(max_age=3.0):
                               i=_events["last"])
         new = [{"id": r[0], "ts": _iso(r[1]), "kind": r[2], "who": r[3],
                 "data": r[4] if isinstance(r[4], dict) else json.loads(r[4] or "{}")} for r in rows or []]
-        cutoff = (datetime.now().astimezone() - timedelta(days=EVENTS_DAYS)).isoformat()
+        cutoff = (datetime.now(RIYADH) - timedelta(days=EVENTS_DAYS)).isoformat()
         merged = [e for e in _events["rows"] if e["ts"] >= cutoff] + new
         if new:
             _events["last"] = new[-1]["id"]
@@ -291,7 +309,12 @@ def _day(ts):
         d = datetime.fromisoformat(str(ts))
     except ValueError:
         return str(ts)[:10]
-    return (d.astimezone() if d.tzinfo else d).date().isoformat()
+    return (d.astimezone(RIYADH) if d.tzinfo else d).date().isoformat()
+
+
+def _today():
+    """Today in Riyadh (the owner's calendar), whatever the server's own time zone is."""
+    return datetime.now(RIYADH).date()
 
 
 def exp_bucket(years):
@@ -307,7 +330,7 @@ def exp_bucket(years):
 
 
 def _series(days, counter):
-    today = date.today()
+    today = _today()
     return [{"day": (today - timedelta(days=i)).isoformat(),
              "n": counter.get((today - timedelta(days=i)).isoformat(), 0)} for i in range(days - 1, -1, -1)]
 
@@ -368,7 +391,7 @@ def bot_status():
     last = max((r.get("finished_at") or "" for r in runs), default="")
     out["cloud_last_run"] = last
     out["cloud_ok"] = bool(last) and (datetime.now().astimezone() - datetime.fromisoformat(last)).total_seconds() < 2.5 * 3600
-    helper = st.get("helper_last") or {}
+    helper = _helper_named(st.get("helper_last"))
     out["helper"] = helper
     out["helper_ok"] = bool(helper.get("at")) and (
         datetime.now().astimezone() - datetime.fromisoformat(helper["at"])).total_seconds() < 30 * 3600
@@ -376,6 +399,15 @@ def bot_status():
 
 
 _cache = {}
+
+
+def _helper_named(helper):
+    """The helper's last run with its sources shown by name ("جدارات"), not by key ("jadarat")."""
+    helper = dict(helper or {})
+    names = {s.get("key"): s.get("name") for s in sources_config()}
+    if isinstance(helper.get("sources"), dict):
+        helper["sources"] = {names.get(k) or k: v for k, v in helper["sources"].items()}
+    return helper
 
 
 def _cached(key, seconds, fn):
@@ -394,6 +426,11 @@ def _subs():
     return users, feeds
 
 
+def _person(e):
+    """A real person's event (not a group, not the dashboard's own login, which has no who)."""
+    return str(e.get("who") or "").startswith("u")
+
+
 def _cities_of(s):
     if isinstance(s.get("cities"), list):
         return [c for c in s["cities"] if c]
@@ -404,20 +441,20 @@ def overview():
     rows = jobs_rows()
     live = live_ids()
     events = events_rows()
-    today, yday = date.today().isoformat(), (date.today() - timedelta(days=1)).isoformat()
+    t0 = _today()
+    today, yday = t0.isoformat(), (t0 - timedelta(days=1)).isoformat()
+    week_ago, two_weeks_ago = (t0 - timedelta(days=7)).isoformat(), (t0 - timedelta(days=14)).isoformat()
     added = Counter(_day(r.get("first_seen")) for r in rows.values())
-    week = sum(n for d, n in added.items() if d > (date.today() - timedelta(days=7)).isoformat())
-    prev_week = sum(n for d, n in added.items()
-                    if (date.today() - timedelta(days=14)).isoformat() < d <= (date.today() - timedelta(days=7)).isoformat())
+    week = sum(n for d, n in added.items() if d > week_ago)
+    prev_week = sum(n for d, n in added.items() if two_weeks_ago < d <= week_ago)
     status = Counter(job_status(r, live) for r in rows.values())
     live_rows = [r for r in rows.values() if r["id"] in live]
     kinds = Counter(r["link_kind"] for r in live_rows)
     users, feeds = _subs()
     subscribed = [s for s in users if s.get("titles") and s.get("mode") in ("daily", "instant")]
     ev_today = [e for e in events if _day(e["ts"]) == today]
-    people_ever = {e["who"] for e in events if e.get("who", "").startswith("u")} | {who(s["chat_id"]) for s in users}
-    active7 = {e["who"] for e in events if e.get("who", "").startswith("u")
-               and _day(e["ts"]) > (date.today() - timedelta(days=7)).isoformat()}
+    people_ever = {e["who"] for e in events if _person(e)} | {who(s["chat_id"]) for s in users}
+    active7 = {e["who"] for e in events if _person(e) and _day(e["ts"]) > week_ago}
     new_users = Counter(_day(s.get("created_at")) for s in users)
     titles = Counter(t["title"] for s in users for t in s.get("titles") or [])
     cities = Counter(c for s in users for c in _cities_of(s))
@@ -436,11 +473,20 @@ def overview():
                   "clicks": sum(1 for e in ev_today if e["kind"] == "click"),
                   "alerts": sum(int((e.get("data") or {}).get("n") or 1) for e in ev_today if e["kind"] == "alert"),
                   "starts": sum(1 for e in ev_today if e["kind"] == "start")},
+        "problems": _problems(),
         "top_sources": Counter(r["source"] for r in live_rows).most_common(8),
         "top_titles": titles.most_common(8),
         "top_cities": cities.most_common(8),
         "bot": bot_status(),
     }
+
+
+def _problems():
+    """Collectors that failed in their last run (blocked ones the helper takes over are not a problem)."""
+    status = storage.read("sources_status")
+    helper_keys = {s.get("key") for s in sources_config() if s.get("cloud") == "helper"}
+    return sorted(v.get("name") or k for k, v in status.items()
+                  if not k.startswith("_") and isinstance(v, dict) and v.get("status") == "error" and k not in helper_keys)
 
 
 def _match_text(r, q):
@@ -451,7 +497,8 @@ def _match_text(r, q):
 
 
 def filter_jobs(f):
-    """f: {q, cities[], exp[], sources[], kinds[], status[], from, to, helper, sort}. Returns rows (newest first)."""
+    """f: {q, cities[], exp[], sources[], kinds[], status[], from, to, helper, jadarat, sort}. Returns rows,
+    newest first (sort="resolved": newest original link found first)."""
     rows = jobs_rows()
     live = live_ids()
     cities, exps, srcs = set(f.get("cities") or []), set(f.get("exp") or []), set(f.get("sources") or [])
@@ -472,13 +519,18 @@ def filter_jobs(f):
             continue
         if f.get("helper") and not r.get("via_helper"):
             continue
+        if f.get("jadarat") and not r.get("via_jadarat"):
+            continue
         day = _day(r.get("first_seen"))
         if (d_from and day < d_from) or (d_to and day > d_to):
             continue
         if not _match_text(r, f.get("q") or ""):
             continue
         out.append(dict(r, status=st, exp_bucket=exp_bucket(r.get("exp_years")), first_day=day))
-    out.sort(key=lambda r: (r.get("first_seen") or "", r.get("posted_date") or ""), reverse=True)
+    if f.get("sort") == "resolved":
+        out.sort(key=lambda r: (r.get("resolved_at") or "", r.get("first_seen") or ""), reverse=True)
+    else:
+        out.sort(key=lambda r: (r.get("first_seen") or "", r.get("posted_date") or ""), reverse=True)
     return out
 
 
@@ -500,12 +552,12 @@ def sources_report():
     live = live_ids()
     status = storage.read("sources_status")
     cfg = {s["name"]: s for s in sources_config()}
-    week_ago = (date.today() - timedelta(days=7)).isoformat()
-    today = date.today().isoformat()
+    week_ago = (_today() - timedelta(days=7)).isoformat()
+    today = _today().isoformat()
     per = defaultdict(lambda: {"live": 0, "today": 0, "week": 0, "all": 0, "direct": 0, "relay_resolved": 0,
                                "relay_pending": 0, "via_helper": 0, "via_jadarat": 0, "cities": Counter()})
     for r in rows.values():
-        p = per[r.get("source") or "?"]
+        p = per[r.get("source") or ""]
         p["all"] += 1
         d = _day(r.get("first_seen"))
         p["today"] += d == today
@@ -532,7 +584,7 @@ def sources_report():
                 "needs_helper": (by_key.get(k) or {}).get("cloud") == "helper" or v.get("status") == "blocked"}
                for k, v in status.items() if not k.startswith("_") and isinstance(v, dict)]
     live_rows = [r for r in rows.values() if r["id"] in live]
-    helper = storage.read("bot_state").get("helper_last") or {}
+    helper = _helper_named(storage.read("bot_state").get("helper_last"))
     return {"sources": out, "collectors": sorted(st_rows, key=lambda x: x["name"]),
             "kinds": {k: sum(1 for r in live_rows if r["link_kind"] == k) for k in LINK_KINDS},
             "via_helper": sum(1 for r in live_rows if r.get("via_helper")),
@@ -547,9 +599,9 @@ def users_report():
     events = events_rows()
     rows = jobs_rows()
     live = live_ids()
-    people_ever = {e["who"] for e in events if (e.get("who") or "").startswith("u")} | {who(s["chat_id"]) for s in users}
+    people_ever = {e["who"] for e in events if _person(e)} | {who(s["chat_id"]) for s in users}
     subscribed = [s for s in users if s.get("titles") and s.get("mode") in ("daily", "instant")]
-    clicked = {e["who"] for e in events if e["kind"] == "click" and (e.get("who") or "").startswith("u")}
+    clicked = {e["who"] for e in events if e["kind"] == "click" and _person(e)}
     searches = [e for e in events if e["kind"] == "search"]
     zero = Counter("، ".join((e.get("data") or {}).get("titles") or []) for e in searches
                    if not (e.get("data") or {}).get("results"))
@@ -614,12 +666,14 @@ EVENT_LABELS = {"start": "بدأ البوت", "search": "بحث", "title_add": "
 
 def sheet_jobs(rows):
     head = ["الرقم", "المسمى", "الجهة", "المدينة", "التخصص", "المصدر", "نوع الرابط", "موقع الرابط", "الخبرة",
-            "عبر جهازي", "عبر جدارات", "الحالة", "أول ظهور", "تاريخ النشر", "رابط التقديم", "رابط الإعلان"]
+            "عبر جهازي", "عبر جدارات", "الحالة", "أول ظهور", "تاريخ النشر", "تاريخ جلب الرابط الأصلي",
+            "الرابط الأصلي (بعد)", "رابط الإعلان (قبل)"]
     body = [[r["id"], r["title"], r["company"], r["city"], r["specialty"], r["source"],
              LINK_KINDS.get(r["link_kind"], r["link_kind"]), r.get("link_host", ""), exp_bucket(r.get("exp_years")),
              "نعم" if r.get("via_helper") else "", "نعم" if r.get("via_jadarat") else "",
              STATUS_LABELS.get(r.get("status"), r.get("status", "")), _day(r.get("first_seen")),
-             r.get("posted_date") or "", r.get("apply_url") or "", r.get("url") or ""] for r in rows]
+             r.get("posted_date") or "", _day(r.get("resolved_at")), r.get("apply_url") or "", r.get("url") or ""]
+            for r in rows]
     return ("الوظائف", head, body)
 
 

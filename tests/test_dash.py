@@ -136,6 +136,17 @@ try:
     s, d, _ = adm.req("GET", "/api/admin/dash/jobs?helper=1")
     check("jobs: fetched by my PC only", d["total"] == 1 and d["rows"][0]["via_helper"])
     check("jobs: facets for the selects", {c for c, _ in d["facets"]["cities"]} >= {"الرياض"})
+    s, d, _ = adm.req("GET", "/api/admin/dash/jobs?kind=relay_resolved&sort=resolved&status=live|expired|archived")
+    check("details: skipped jobs carry the link before and after", d["total"] == 1 and d["rows"][0]["url"]
+          and d["rows"][0]["apply_url"] and d["rows"][0]["url"] != d["rows"][0]["apply_url"] and "resolved_at" in d["rows"][0],
+          d["rows"][:1])
+    s, d, _ = adm.req("GET", "/api/admin/dash/jobs?jadarat=1")
+    s, d, _ = adm.req("GET", "/api/admin/dash/jobs?city=__none__&status=live|expired|archived")
+    check("filters: 'not stated' city is selectable", s == 200 and all(not r["city"] for r in d["rows"]), d.get("total"))
+    check("days: counted in Riyadh time", analytics._day("2026-11-17T22:30:00+00:00") == "2026-11-18")
+    check("live feed: setup_done carries a count, not a list", "n_titles=" in open(os.path.join(ROOT, "backend", "bot.py"),
+                                                                                  encoding="utf-8").read())
+    check("details: Jadarat-origin filter", s == 200 and all(r["via_jadarat"] for r in d["rows"]), d.get("total"))
 
     s, d, _ = adm.req("GET", "/api/admin/dash/sources")
     li = next((x for x in d["sources"] if x["source"] == "LinkedIn"), {})
@@ -190,9 +201,10 @@ try:
         st["owner_chat"] = 777
     s, d, _ = anon.req("POST", "/api/admin/login", {"password": ADMIN_PW})
     check("owner linked: password login closed", s == 403, d)
-    ticket, code = owner.new_ticket()
-    key, code2 = owner.ticket_for_bot(ticket)
+    ticket, code, bot_token = owner.new_ticket()
+    key, code2 = owner.ticket_for_bot(bot_token)
     check("ticket: the bot sees the same code", code == code2 and key)
+    check("ticket: the page's secret is not the bot link", ticket != bot_token and owner.ticket_for_bot(ticket) == (None, None))
     check("ticket: someone else can't approve", owner.answer(555, key, True) is False)
     s, d, _ = anon.req("POST", "/api/admin/tg-login/check", {"ticket": ticket})
     check("ticket: pending until the owner taps yes", d.get("state") == "pending")
@@ -201,8 +213,12 @@ try:
     check("ticket: approved -> logged in", d.get("state") == "approved"
           and anon.req("GET", "/api/admin/whoami")[1]["logged_in"])
     check("ticket: used once", owner.check_ticket(ticket) == "expired")
-    t2, _ = owner.new_ticket()
-    k2, _ = owner.ticket_for_bot(t2)
+    # the login is logged with no person: every page must still load (it broke the home page once)
+    for path in ("overview", "users", "sources", "live", "jobs"):
+        check(f"after a Telegram login: {path} loads", anon.req("GET", "/api/admin/dash/" + path)[0] == 200)
+    check("after a Telegram login: Excel loads", anon.req("GET", "/api/admin/export/all", raw=True)[0] == 200)
+    t2, _, b2 = owner.new_ticket()
+    k2, _ = owner.ticket_for_bot(b2)
     owner.answer(777, k2, False)
     check("ticket: 'no' denies", Client(base).req("POST", "/api/admin/tg-login/check", {"ticket": t2})[1].get("state") == "denied")
     # claim code (first owner)

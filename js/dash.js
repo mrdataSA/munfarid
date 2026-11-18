@@ -134,12 +134,28 @@
     el.innerHTML = '<div class="stack">' + keys.filter((k) => kinds[k]).map((k) =>
       `<span class="k-${k}" style="width:${(kinds[k] / total) * 100}%" title="${esc(KIND_LABEL[k])}: ${n(kinds[k])}"></span>`).join('') +
       '</div><div class="legend">' + keys.map((k) =>
-      `<div class="row"><span class="sw k-${k}"></span>${esc(KIND_LABEL[k])}<span class="val">${n(kinds[k])} · ${Math.round(((kinds[k] || 0) / total) * 100)}%</span></div>`).join('') + '</div>';
+      `<button class="row drill-link" type="button" ${drillAttr(KIND_LABEL[k], { kind: k, sort: k === 'relay_resolved' ? 'resolved' : '' })}>` +
+      `<span class="sw k-${k}"></span>${esc(KIND_LABEL[k])}<span class="val">${n(kinds[k])} · ${Math.round(((kinds[k] || 0) / total) * 100)}%</span></button>`).join('') + '</div>';
   }
   function kpi(label, value, sub, cls) {
     return `<div class="kpi"><div class="k-label">${esc(label)}</div><div class="k-value">${value}</div>` +
       `<div class="k-sub ${cls || ''}">${sub || '&nbsp;'}</div></div>`;
   }
+  // A number that opens the jobs behind it (see the details dialog)
+  function drillAttr(title, params) { return `data-drill="${esc(JSON.stringify({ title, params }))}"`; }
+  function dl(value, title, params) {
+    return `<button class="drill-link" type="button" ${drillAttr(title, params)}>${value}</button>`;
+  }
+  function kpiDrill(label, value, sub, title, params) {
+    return `<button class="kpi" type="button" ${drillAttr(title, params)}><div class="k-label">${esc(label)}</div>` +
+      `<div class="k-value">${value}</div><div class="k-sub">${sub || '&nbsp;'}</div></button>`;
+  }
+  // The Riyadh calendar day n days ago, YYYY-MM-DD (the server counts days in Riyadh time too)
+  function dayAgo(nDays) {
+    return new Date(Date.now() - nDays * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Riyadh' });
+  }
+  const NONE = '__none__';   // the filter value for "not stated" (empty city or source)
+  const ALL_STATUS = 'live|expired|archived';
   function table(el, head, rows, numCols) {
     if (!rows.length) { el.innerHTML = '<tbody><tr><td class="empty">لا توجد بيانات بعد</td></tr></tbody>'; return; }
     const nc = new Set(numCols || []);
@@ -193,12 +209,14 @@
     try { const d = await api('POST', '/api/admin/owner-link'); window.open(safeUrl(d.link), '_blank', 'noopener'); banner('افتح البوت واضغط «ابدأ» لربط حسابك. بعدها يكون الدخول عبر تيليجرام فقط.'); }
     catch (e) { banner(e.message); }
   });
-  function banner(t) { $('#banner').textContent = t; $('#banner').hidden = !t; }
+  let bannerIsError = false;
+  function banner(t, isError) { $('#banner').textContent = t; $('#banner').hidden = !t; bannerIsError = !!(t && isError); }
 
   // ---------------------------------------------------------------- pages
   let page = 'home';
   const loaded = {};
   $$('#tabs .tab').forEach((b) => b.addEventListener('click', () => go(b.dataset.page)));
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
   function go(p) {
     page = p;
     $$('#tabs .tab').forEach((b) => b.classList.toggle('active', b.dataset.page === p));
@@ -211,7 +229,10 @@
     if (!fn) return;
     if (!force && loaded[page] && Date.now() - loaded[page] < 15000) return;
     loaded[page] = Date.now();
-    try { await fn(); } catch (e) { if (e.message !== 'login') banner(e.message); }
+    try {
+      await fn();
+      if (bannerIsError) banner('');
+    } catch (e) { if (e.message !== 'login') banner(e.message, true); }
   }
 
   function statusCards(b) {
@@ -231,12 +252,16 @@
     const d = await api('GET', '/api/admin/dash/overview');
     const j = d.jobs, p = d.people, t = d.today;
     $('#status-row').innerHTML = statusCards(d.bot);
+    const probs = d.problems || [];
+    $('#problems').hidden = !probs.length;
+    $('#problems').innerHTML = probs.length ? `⚠️ ${n(probs.length)} مصدر تعثّر في آخر تشغيل: ${esc(probs.slice(0, 6).join('، '))}${probs.length > 6 ? '…' : ''} ` +
+      '<button class="drill-link" type="button" data-go="sources">التفاصيل في صفحة المصادر</button>' : '';
     const wk = j.week_change == null ? '' : (j.week_change >= 0 ? `<span class="up">▲ ${j.week_change}%</span>` : `<span class="down">▼ ${Math.abs(j.week_change)}%</span>`) + ' عن الأسبوع السابق';
     $('#kpis').innerHTML =
-      kpi('الوظائف الحالية', n(j.live), `كل ما جُمع: ${n(j.all)}`) +
-      kpi('جديد اليوم', n(j.today), `أمس: ${n(j.yesterday)}`) +
-      kpi('جديد آخر 7 أيام', n(j.week), wk) +
-      kpi('في الأرشيف', n(j.archived), `منتهية قريباً: ${n(j.expired)}`) +
+      kpiDrill('الوظائف الحالية', n(j.live), `كل ما جُمع: ${n(j.all)}`, 'الوظائف الحالية', {}) +
+      kpiDrill('جديد اليوم', n(j.today), `أمس: ${n(j.yesterday)}`, 'وظائف جديدة اليوم', { status: ALL_STATUS, from: dayAgo(0) }) +
+      kpiDrill('جديد آخر 7 أيام', n(j.week), wk, 'وظائف آخر 7 أيام', { status: ALL_STATUS, from: dayAgo(6) }) +
+      kpiDrill('في الأرشيف', n(j.archived), `منتهية (أقل من 3 أشهر): ${n(j.expired)}`, 'الأرشيف (أكثر من 3 أشهر)', { status: 'archived' }) +
       kpi('جرّبوا البوت', n(p.tried), `جدد اليوم: ${n(p.new_today)}`) +
       kpi('مشتركون الآن', n(p.subscribers), `أضافوا مسمى: ${n(p.with_titles)} · مجموعات/قنوات: ${n(p.feeds)}`) +
       kpi('نشطون آخر 7 أيام', n(p.active7), `بحث اليوم: ${n(t.searches)}`) +
@@ -268,8 +293,8 @@
   }
   function msOptions(key) {
     const f = facets || {};
-    if (key === 'city') return (f.cities || []).map(([v, c]) => [v, v || 'غير محدد', c]);
-    if (key === 'source') return (f.sources || []).map(([v, c]) => [v, v, c]);
+    if (key === 'city') return (f.cities || []).map(([v, c]) => [v || NONE, v || 'غير محدد', c]);
+    if (key === 'source') return (f.sources || []).map(([v, c]) => [v || NONE, v || 'غير محدد', c]);
     if (key === 'exp') return (f.exp || []).map(([v, c]) => [v, v, c]);
     if (key === 'kind') return (f.kinds || []).map(([v, c]) => [v, KIND_LABEL[v] || v, c]);
     if (key === 'status') return Object.entries(STATUS_LABEL).map(([v, l]) => [v, l, null]);
@@ -282,6 +307,7 @@
       if (!btn) {
         box.innerHTML = '<button class="ms-btn" type="button" aria-haspopup="true"></button><div class="ms-panel" hidden></div>';
         btn = $('.ms-btn', box);
+        $('.ms-panel', box).addEventListener('click', (e) => e.stopPropagation());
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const panel = $('.ms-panel', box);
@@ -300,7 +326,6 @@
       '<div class="opts">' + opts.map(([v, l, c]) =>
         `<label><input type="checkbox" value="${esc(v)}" ${filt[key].includes(v) ? 'checked' : ''}> ${esc(l)}` +
         (c == null ? '' : `<span class="cnt">${n(c)}</span>`) + '</label>').join('') + '</div>';
-    panel.addEventListener('click', (e) => e.stopPropagation());
     const s = $('input[type=search]', panel);
     if (s) s.addEventListener('input', () => $$('label', panel).forEach((l) => { l.hidden = !l.textContent.includes(s.value.trim()); }));
     $$('input[type=checkbox]', panel).forEach((c) => c.addEventListener('change', () => {
@@ -319,8 +344,11 @@
   });
   $('#f-export').addEventListener('click', () => { location.href = '/api/admin/export/jobs?' + filterQuery(); });
 
+  let jobsSeq = 0;
   async function loadJobs() {
+    const seq = ++jobsSeq;
     const d = await api('GET', '/api/admin/dash/jobs?' + filterQuery({ page: jobsPage }));
+    if (seq !== jobsSeq) return;   // a newer filter change already asked again
     facets = d.facets;
     renderMs();
     $('#jobs-summary').innerHTML = `<span class="chip">النتيجة: <b>${n(d.total)}</b> وظيفة</span>` +
@@ -332,6 +360,7 @@
         const title = link ? `<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a>` : esc(r.title);
         const kind = `<span class="sw-inline k-${esc(r.link_kind)}"></span>${esc(KIND_LABEL[r.link_kind] || r.link_kind)}` +
           (r.link_host ? `<br><span class="muted small" dir="ltr">${esc(r.link_host)}</span>` : '') +
+          (r.link_kind === 'relay_resolved' ? `<br>${dl('الرابط قبل وبعد ↗', r.title, { q: r.title, kind: 'relay_resolved', source: r.source, status: ALL_STATUS })}` : '') +
           (r.via_helper ? '<br><span class="muted small">جابها جهازي</span>' : '');
         return [title, esc(r.company), esc(r.city || 'غير محدد'), esc(r.source), esc(r.exp_bucket), kind,
           `<span class="num">${esc(r.first_day)}</span>`, esc(STATUS_LABEL[r.status] || r.status)];
@@ -352,10 +381,10 @@
     const k = d.kinds;
     const needs = d.helper_sources.length;
     $('#src-kpis').innerHTML =
-      kpi('مباشرة من المصدر', n(k.direct), 'بوابات الجهات والشركات والمنصات الأصلية') +
-      kpi('تخطّينا إعلاناتها', n(k.relay_resolved), 'دخلنا الموقع الناقل وجبنا رابط صاحب الوظيفة') +
-      kpi('بانتظار الرابط الأصلي', n(k.relay_pending), 'مخفية في البوت حتى نجد رابطها') +
-      kpi('جابها جهازي', n(d.via_helper), `منذ البداية: ${n(d.via_helper_all)} · مصادر تحتاجه: ${n(needs)}`);
+      kpiDrill('مباشرة من المصدر', n(k.direct), 'بوابات الجهات والشركات والمنصات الأصلية', 'وظائف روابطها مباشرة من المصدر', { kind: 'direct' }) +
+      kpiDrill('تخطّينا إعلاناتها', n(k.relay_resolved), 'دخلنا الموقع الناقل وجبنا رابط صاحب الوظيفة', 'تخطّينا إعلاناتها: الرابط قبل وبعد', { kind: 'relay_resolved', sort: 'resolved' }) +
+      kpiDrill('بانتظار الرابط الأصلي', n(k.relay_pending), 'مخفية في البوت حتى نجد رابطها', 'بانتظار الرابط الأصلي', { kind: 'relay_pending' }) +
+      kpiDrill('جابها جهازي', n(d.via_helper), `منذ البداية: ${n(d.via_helper_all)} · مصادر تحتاجه: ${n(needs)}`, 'وظائف جابها جهازي', { helper: '1', status: ALL_STATUS });
     const h = d.helper || {};
     $('#helper-card').innerHTML = h.at ?
       `<p>آخر تشغيل <b>${ago(h.at)}</b> (${esc(h.minutes)} دقيقة)، روابط أصلية فتحها: <b>${n(h.origin_links)}</b></p>` +
@@ -363,14 +392,99 @@
       : '<p class="empty">لم يشتغل جهازك القديم بعد. شغّل tools\\install_saudi_helper.bat عليه.</p>';
     hbars($('#helper-sources'), d.helper_sources.map((s) => [s.source, s.live]), 'وظيفة حالية');
     table($('#src-table'), ['المصدر', 'الحالية', 'اليوم', '7 أيام', 'كل ما جُمع', 'مباشر', 'تخطّينا الإعلانات', 'بانتظار الرابط', 'عبر جهازي', 'عبر جدارات', 'أكثر المدن'],
-      d.sources.map((s) => [esc(s.source) + (s.needs_helper ? ' <span class="badge warn">▲ يحتاج جهازي</span>' : ''), n(s.live), n(s.today), n(s.week), n(s.all),
-        n(s.direct), n(s.relay_resolved), n(s.relay_pending), n(s.via_helper), n(s.via_jadarat),
-        esc(s.top_cities.map(([c, v]) => `${c || 'غير محدد'} ${v}`).join('، '))]), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      d.sources.map((s) => {
+        const src = s.source || 'غير محدد';
+        const cell = (v, label, extra) => (v ? dl(n(v), `${src}: ${label}`, Object.assign({ source: s.source || NONE }, extra)) : '0');
+        return [esc(src) + (s.needs_helper ? ' <span class="badge warn">▲ يحتاج جهازي</span>' : ''),
+          cell(s.live, 'الوظائف الحالية', {}), cell(s.today, 'جديد اليوم', { status: ALL_STATUS, from: dayAgo(0) }),
+          cell(s.week, 'آخر 7 أيام', { status: ALL_STATUS, from: dayAgo(6) }), cell(s.all, 'كل ما جُمع', { status: ALL_STATUS }),
+          cell(s.direct, 'مباشر من المصدر', { kind: 'direct' }),
+          cell(s.relay_resolved, 'تخطّينا الإعلانات: الرابط قبل وبعد', { kind: 'relay_resolved', sort: 'resolved' }),
+          cell(s.relay_pending, 'بانتظار الرابط الأصلي', { kind: 'relay_pending' }), cell(s.via_helper, 'عبر جهازي', { helper: '1' }),
+          cell(s.via_jadarat, 'أصلها جدارات', { jadarat: '1' }),
+          esc(s.top_cities.map(([c, v]) => `${c || 'غير محدد'} ${v}`).join('، '))];
+      }), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     const st = { ok: ['good', 'يعمل'], empty: ['warn', 'لا جديد'], blocked: ['bad', 'محجوب'], error: ['bad', 'خطأ'], disallowed: ['idle', 'ممنوع'], skipped: ['idle', 'متوقف'] };
     table($('#col-table'), ['المجمّع', 'الحالة', 'جُلب', 'أُضيف', 'آخر تشغيل', 'ملاحظة'],
       d.collectors.map((c) => [esc(c.name) + (c.needs_helper ? ' <span class="badge warn">▲ جهازي</span>' : ''),
         badge(...(st[c.status] || ['idle', c.status || '—'])), n(c.fetched), n(c.added), esc(ago(c.last_run)), `<span class="muted small">${esc(c.message)}</span>`]), [2, 3]);
   }
+
+  // ---------------------------------------------------------------- details dialog
+  // Any number with data-drill opens the jobs behind it: source, title, the link before (the relay
+  // page we were given) and after (the employer's own link), and the dates.
+  const drill = { params: {}, page: 0 };
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-drill]');
+    if (!el) return;
+    let spec;
+    try { spec = JSON.parse(el.dataset.drill); } catch (err) { return; }
+    drill.params = spec.params || {};
+    drill.page = 0;
+    $('#drill-q').value = drill.params.q || '';
+    $('#drill-title').textContent = spec.title;
+    const dlg = $('#drill');
+    if (!dlg.open) dlg.showModal();
+    loadDrill();
+  });
+  function drillQuery(extra) {
+    const q = new URLSearchParams();
+    Object.entries(drill.params).forEach(([k, v]) => { if (v && k !== 'q') q.set(k, v); });
+    if (!drill.params.status) q.set('status', 'live');
+    const text = $('#drill-q').value.trim();
+    if (text) q.set('q', text);
+    Object.entries(extra || {}).forEach(([k, v]) => q.set(k, v));
+    return q.toString();
+  }
+  function linkCell(url, label) {
+    const u = safeUrl(url);
+    if (!u) return '<span class="muted">—</span>';
+    let host = u;
+    try { host = new URL(u).hostname.replace(/^www\./, ''); } catch (e) { /* shown as is */ }
+    return `<div class="link-cell"><a href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(u)}">${esc(host)}</a>` +
+      `<span class="muted">${esc(label)}</span></div>`;
+  }
+  let drillSeq = 0;
+  async function loadDrill() {
+    const tbl = $('#drill-table');
+    const seq = ++drillSeq;
+    tbl.innerHTML = '<tbody><tr><td class="empty">جارٍ التحميل…</td></tr></tbody>';
+    let d;
+    try { d = await api('GET', '/api/admin/dash/jobs?' + drillQuery({ page: drill.page })); }
+    catch (e) {
+      if (seq === drillSeq && e.message !== 'login') tbl.innerHTML = `<tbody><tr><td class="empty">${esc(e.message)}</td></tr></tbody>`;
+      return;
+    }
+    if (seq !== drillSeq) return;   // a newer request (typing, paging) already replaced this one
+    $('#drill-total').innerHTML = `<b>${n(d.total)}</b> وظيفة`;
+    table(tbl, ['الوظيفة', 'المصدر', 'المدينة', 'الرابط قبل', '', 'الرابط بعد (الأصلي)', 'أول ظهور', 'جلب الأصلي', 'الحالة'],
+      d.rows.map((r) => {
+        const before = r.link_kind === 'direct' ? '<span class="muted small">مباشر، بلا ناقل</span>' : linkCell(r.url, 'صفحة الموقع الناقل');
+        const after = r.link_kind === 'relay_pending' ? '<span class="muted small">لم نجده بعد</span>' :
+          linkCell(r.link_kind === 'direct' ? r.url : r.apply_url, r.link_kind === 'direct' ? 'رابط المصدر' : 'رابط صاحب الوظيفة');
+        return [`<b>${esc(r.title)}</b>${r.company ? `<br><span class="muted small">${esc(r.company)}</span>` : ''}`,
+          esc(r.source) + (r.via_helper ? '<br><span class="muted small">عبر جهازي</span>' : ''),
+          esc(r.city || 'غير محدد'), before, r.link_kind === 'relay_resolved' ? '<span class="arrow">←</span>' : '', after,
+          `<span class="num">${esc(r.first_day)}</span>` + (r.posted_date ? `<br><span class="muted small">نُشرت ${esc(r.posted_date)}</span>` : ''),
+          r.resolved_at ? `<span class="num">${esc(hhmm(r.resolved_at))}</span>` :
+            (r.link_kind === 'relay_resolved' ? '<span class="muted small">قبل بدء التتبّع</span>' : ''),
+          esc(STATUS_LABEL[r.status] || r.status)];
+      }));
+    const pages = Math.ceil(d.total / d.size);
+    $('#drill-pager').innerHTML = pages > 1 ?
+      `<button class="btn btn-small" type="button" data-dp="-1" ${d.page <= 0 ? 'disabled' : ''}>السابق</button>` +
+      `<span class="muted">صفحة ${d.page + 1} من ${pages}</span>` +
+      `<button class="btn btn-small" type="button" data-dp="1" ${d.page >= pages - 1 ? 'disabled' : ''}>التالي</button>` : '';
+  }
+  $('#drill-pager').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-dp]');
+    if (b && !b.disabled) { drill.page += +b.dataset.dp; loadDrill(); }
+  });
+  let drillTimer = null;
+  $('#drill-q').addEventListener('input', () => { clearTimeout(drillTimer); drillTimer = setTimeout(() => { drill.page = 0; loadDrill(); }, 350); });
+  $('#drill-close').addEventListener('click', () => $('#drill').close());
+  $('#drill').addEventListener('click', (e) => { if (e.target === $('#drill')) $('#drill').close(); });
+  $('#drill-export').addEventListener('click', () => { location.href = '/api/admin/export/jobs?' + drillQuery(); });
 
   // ---------------------------------------------------------------- users page
   async function loadUsers() {
@@ -399,7 +513,7 @@
   }
 
   // ---------------------------------------------------------------- live
-  let liveTimer = null, lastId = 0, lastJobs = -1, liveOk = Date.now();
+  let liveTimer = null, lastId = 0, lastJobs = -1, liveOk = Date.now(), ticking = false;
   function setLiveStatus(b) {
     const ok = Date.now() - liveOk < LIVE_MS * 3;
     $('#live').classList.toggle('off', !ok);
@@ -407,7 +521,8 @@
     if (b && page === 'home') $('#status-row').innerHTML = statusCards(b);
   }
   async function tick() {
-    if (document.hidden) return;
+    if (document.hidden || ticking) return;   // a slow answer must not overlap the next poll
+    ticking = true;
     try {
       const d = await api('GET', '/api/admin/dash/live?since=' + lastId);
       liveOk = Date.now();
@@ -416,7 +531,8 @@
         const ul = $('#feed');
         const items = d.events.map((e) => {
           const data = e.data || {};
-          const what = data.titles ? data.titles.join('، ') : data.cities ? data.cities.join('، ') : data.title || data.mode || data.exp || (data.n ? n(data.n) + ' وظيفة' : '');
+          const list = (x) => (Array.isArray(x) && x.length ? x.join('، ') : '');
+          const what = list(data.titles) || list(data.cities) || data.title || data.mode || data.exp || (data.n ? n(data.n) + ' وظيفة' : '');
           return `<li class="${lastId && e.id > lastId ? 'new' : ''}"><span class="t">${hhmm(e.ts)}</span><span>${esc(e.label)}${what ? ': ' + esc(what) : ''}</span></li>`;
         });
         if (lastId === 0) {
@@ -431,7 +547,7 @@
       lastJobs = d.jobs_total;
       setLiveStatus(d.bot);
       if (changed) refresh(false);
-    } catch (e) { setLiveStatus(null); }
+    } catch (e) { setLiveStatus(null); } finally { ticking = false; }
   }
   function startLive() { stopLive(); lastId = 0; lastJobs = -1; tick(); liveTimer = setInterval(tick, LIVE_MS); }
   function stopLive() { clearInterval(liveTimer); liveTimer = null; }

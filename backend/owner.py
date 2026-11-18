@@ -85,22 +85,26 @@ def link_owner(chat_id, token):
 # ---------------------------------------------------------------- login tickets
 
 def new_ticket():
-    """(ticket, code): the page keeps the ticket, shows the code, and opens the bot link."""
+    """(ticket, code, bot_token): the page keeps the ticket (its secret, never shown), shows the code,
+    and opens t.me/<bot>?start=login_<bot_token>. Someone who sees that link can't use it to log in."""
     ticket = secrets.token_urlsafe(18)
+    bot_token = secrets.token_urlsafe(18)
     code = f"{secrets.randbelow(9000) + 1000}"
     with storage.edit("bot_state") as st:
         tickets = _prune(st.get("dash_login"), TICKET_SECONDS)
-        tickets[_h(ticket)] = {"at": time.time(), "code": code, "state": "pending"}
+        tickets[_h(ticket)] = {"at": time.time(), "code": code, "state": "pending", "bot": _h(bot_token)}
         st["dash_login"] = dict(list(tickets.items())[-20:])
-    return ticket, code
+    return ticket, code, bot_token
 
 
 def ticket_for_bot(token):
     """The pending ticket a /start login_<token> refers to: (key, code) or (None, None)."""
-    t = _prune(storage.read("bot_state").get("dash_login"), TICKET_SECONDS).get(_h(token))
-    if not t or t.get("state") != "pending":
+    want = _h(token or "")
+    tickets = _prune(storage.read("bot_state").get("dash_login"), TICKET_SECONDS)
+    key = next((k for k, t in tickets.items() if hmac.compare_digest(t.get("bot", ""), want)), None)
+    if not key or tickets[key].get("state") != "pending":
         return None, None
-    return _h(token)[:16], t["code"]
+    return key[:16], tickets[key]["code"]
 
 
 def answer(chat_id, short_key, yes):

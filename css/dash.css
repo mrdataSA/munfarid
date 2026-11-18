@@ -183,3 +183,29 @@ input[type=password] { width: 100%; margin: 10px 0; }
 .report span { color: var(--muted); font-size: 13px; }
 .sw-inline { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-inline-end: 5px; vertical-align: middle; }
 .card h4 { margin: 12px 0 6px; font-weight: 700; }
+
+/* clickable numbers + details dialog */
+.drill-link { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted var(--line-strong); text-underline-offset: 4px; }
+.drill-link:hover { color: var(--gold); text-decoration-color: var(--gold); }
+.drill-link:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 4px; }
+button.kpi { font: inherit; color: inherit; text-align: start; cursor: pointer; width: 100%; }
+button.kpi:hover { border-color: var(--gold); }
+button.kpi .k-label::after { content: " ↗"; color: var(--gold); }
+.legend .row.drill-link { text-decoration: none; width: 100%; text-align: start; }
+.legend .row.drill-link:hover { color: var(--gold); }
+.drill { width: min(1200px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; color: var(--text); background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); }
+.drill[open] { display: flex; flex-direction: column; }
+.drill::backdrop { background: rgba(6, 8, 24, 0.7); }
+.drill-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.drill-head h3 { margin: 0; font-size: 17px; flex: 1; }
+.drill-actions { display: flex; gap: 8px; }
+.drill-filter { display: flex; gap: 8px; align-items: center; padding: 10px 16px; flex-wrap: wrap; }
+.drill-filter input { flex: 1 1 220px; }
+.drill-body { flex: 1; overflow: auto; padding: 0 16px; min-height: 120px; }
+.drill .pager { padding: 10px 16px 14px; }
+.link-cell { display: grid; gap: 2px; min-width: 150px; max-width: 260px; }
+.link-cell a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; text-align: right; }
+.link-cell .muted { font-size: 12px; }
+.arrow { color: var(--good); font-weight: 800; }
+#src-table td:last-child { min-width: 240px; }
+#src-table td:first-child { min-width: 120px; }

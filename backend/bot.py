@@ -885,7 +885,7 @@ def finish_setup(chat_id, mid=None):
     with _edit_sub(chat_id) as s:
         s["setup"], s["setup_done"] = "", True
         sub = dict(s)
-    _ev("setup_done", chat_id, titles=len(sub.get("titles") or []), cities=cities_of(sub), exp=sub.get("exp") or "",
+    _ev("setup_done", chat_id, n_titles=len(sub.get("titles") or []), cities=cities_of(sub), exp=sub.get("exp") or "",
         mode=sub.get("mode"))
     _show(chat_id, mid, ("✅ <b>تم! تنبيهاتك جاهزة</b>\n\n" + _summary(sub), None))
     tg.send(chat_id, _sub_note(sub), reply_markup=MAIN_KB)
@@ -1276,8 +1276,9 @@ def dash_login_request(chat_id, token):
     key, code = owner.ticket_for_bot(token)
     if chat_id != owner.owner_chat() or not key:
         return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
-    tg.send(chat_id, f"🔐 <b>طلب دخول للوحة مُنْفَرِد</b>\nالرمز الظاهر في الصفحة: <b>{code}</b>\n"
-                     "هل أنت من يحاول الدخول الآن؟ اضغط «نعم» فقط إذا كان الرمز مطابقاً.",
+    tg.send(chat_id, f"🔐 <b>طلب دخول للوحة مُنْفَرِد</b>\nالرمز: <b>{code}</b>\n"
+                     "اضغط «نعم» فقط إذا كنت أنت من ضغط «الدخول عبر تيليجرام» قبل لحظات وترى نفس الرمز في الصفحة. "
+                     "إن وصلك هذا الرابط من أحد، اضغط «لا».",
             reply_markup={"inline_keyboard": [[{"text": "✅ نعم، أنا", "callback_data": "dl:yes:" + key},
                                                {"text": "❌ لا", "callback_data": "dl:no:" + key}]]})
 
