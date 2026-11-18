@@ -76,7 +76,7 @@ class Client:
 
 def start_server(data_dir, port):
     env = dict(os.environ, RIZQ_DATA_DIR=data_dir, ADMIN_PASSWORD=ADMIN_PW, AUTO_COLLECT_HOURS="0",
-               PYTHONIOENCODING="utf-8")
+               PYTHONIOENCODING="utf-8", PUBLIC_SITE="1")
     proc = subprocess.Popen([sys.executable, "server.py", "--port", str(port), "--no-open", "--no-workers"],
                             cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     base = f"http://localhost:{port}"
@@ -298,7 +298,7 @@ def run_api_checks(base):
     check("delete user", s == 200)
 
     # --- static allowlist
-    for p, want in [("/", 200), ("/js/app.js", 200), ("/js/portal.js", 200), ("/data/jobs.json", 404),
+    for p, want in [("/", 200), ("/js/dash.js", 200), ("/css/dash.css", 200), ("/data/jobs.json", 404),
                     ("/data/store/direct_posts.json", 404), ("/.env", 404), ("/backend/posts.py", 404),
                     ("/tests/test_api.py", 404), ("//data/store/users.json", 404)]:
         code = anon.status_of(p)
@@ -372,7 +372,7 @@ def run_safeurl_check():
     if not node:
         print("SKIP safeUrl check (node not installed)")
         return
-    with open(os.path.join(ROOT, "js", "app.js"), encoding="utf-8") as f:
+    with open(os.path.join(ROOT, "js", "dash.js"), encoding="utf-8") as f:
         src = f.read()
     start = src.index("  function safeUrl(")
     end = src.index("\n  }\n", start) + 4

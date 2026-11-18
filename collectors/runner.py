@@ -14,7 +14,7 @@ import time
 import traceback
 from urllib.parse import urlsplit
 
-from backend import ai, bot, catalog, config, enrich, normalize, notifier, storage
+from backend import ai, analytics, bot, catalog, config, enrich, normalize, notifier, storage
 
 from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, x_api
 
@@ -56,6 +56,8 @@ def from_helper(source):
     # removed by _helper_done() only after these jobs are stored: a crash keeps them for next run
     source["_helper_consumed"] = [b.get("at") for b in batches]
     items = [it for b in batches for it in (b.get("items") or [])][-HELPER_MAX_ITEMS:]
+    for it in items:
+        it["via_helper"] = True     # fetched by Raed's PC (shown as such on the dashboard)
     if batches and batches[-1].get("filter_jobs") is not None:
         source["filter_jobs"] = batches[-1]["filter_jobs"]
     if batches:
@@ -158,6 +160,8 @@ def _with_apply(job, item):
     "جدارات (عبر ناقل)"): Jadarat refuses cloud servers, so its jobs reach us through
     public sites that re-post them, never by fetching Jadarat itself."""
     link = str(item.get("apply_url") or "").strip()
+    if job and item.get("via_helper"):
+        job["via_helper"] = True
     if job and link.lower().startswith(("http://", "https://")) and link != job.get("url"):
         job["apply_url"] = link[:1000]
         if _jadarat_link(link) and not _jadarat_link(job.get("url")):
@@ -236,6 +240,11 @@ def _store_source(src, items, totals, sent_per_user):
         if job:
             jobs.append(job)
     added = catalog.merge_collected(jobs) if jobs else []
+    if added and config.DATABASE_URL:
+        try:  # the owner's dashboard sees each new job as soon as it is stored
+            analytics.sync_jobs(added)
+        except Exception:
+            log.warning("dashboard sync failed for %s:\n%s", src["key"], traceback.format_exc())
     _set_status(src["key"], jobs=len(jobs), added=len(added))
     totals["items"] += len(items)
     totals["jobs"] += len(jobs)

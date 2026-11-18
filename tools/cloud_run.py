@@ -23,7 +23,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from backend import bot, config, pgstore, storage  # noqa: E402
+from backend import analytics, bot, config, owner, pgstore, storage  # noqa: E402
 
 log = logging.getLogger("rizq.cloud")
 SNAPSHOT = os.path.join(ROOT, "snapshot")   # bundled with the bot/site function (read-only)
@@ -89,8 +89,13 @@ def write_snapshot():
     with open(os.path.join(SNAPSHOT, "built_at.txt"), "w", encoding="utf-8") as f:
         f.write(storage.now_iso())
     # The site's job list as a static file (served by Vercel's CDN, compressed): a function's
-    # answer is limited to 4.5 MB, the full list is bigger. vercel.json maps /api/jobs to it.
+    # answer is limited to 4.5 MB, the full list is bigger. Only while the job site is public:
+    # the site is now the owner's private dashboard (PUBLIC_SITE=0), so no public copy is left.
     from backend import catalog
+    if not config.PUBLIC_SITE:
+        if os.path.exists(os.path.join(PUB, "jobs.json")):
+            os.remove(os.path.join(PUB, "jobs.json"))
+        return
     os.makedirs(PUB, exist_ok=True)
     body = dict(catalog.public_jobs(), ok=True)
     with open(os.path.join(PUB, "jobs.json.tmp"), "w", encoding="utf-8") as f:
@@ -122,6 +127,11 @@ def main():
     restore_if_missing()
     if "--restore" in sys.argv:
         return
+    try:   # the owner dashboard's tables (created once) + a one-time owner claim code
+        analytics.init_schema()
+        owner.set_claim(os.environ.get("OWNER_CLAIM_CODE", "").strip())
+    except Exception:
+        log.exception("dashboard setup failed")
     from collectors import runner
     if "--full" in sys.argv or "--fast" in sys.argv:
         full = "--full" in sys.argv          # the workflow decides (it installs the browser for full runs)
@@ -135,6 +145,11 @@ def main():
     if config.TELEGRAM_BOT_TOKEN:
         report["feed_posts"] = post_feeds(FEED_MINUTES)
         report["digest_sent"] = bot.digest_tick()
+    try:   # every live job (changed rows only) + archive what is over 3 months old
+        report["dashboard_synced"] = analytics.sync_jobs(storage.read("jobs"), touch=True)
+        report["archived"] = analytics.archive_old()
+    except Exception:
+        log.exception("dashboard sync failed")
     try:
         backup_daily()
         pgstore.purge_deleted()

@@ -64,6 +64,8 @@ jobs:
           JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           LINKEDIN_ENABLED: ${{ vars.LINKEDIN_ENABLED }}
+          PUBLIC_HOSTS: ${{ vars.PUBLIC_HOSTS }}               # tracked job links (<site>/j/...) in alerts
+          OWNER_CLAIM_CODE: ${{ secrets.OWNER_CLAIM_CODE }}    # one-time code: "/owner <code>" in the bot
         run: python tools/cloud_run.py ${{ steps.mode.outputs.full == '1' && '--full' || '--fast' }}
 
       - name: Save stored jobs

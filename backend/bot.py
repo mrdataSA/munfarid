@@ -35,7 +35,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import ai, catalog, config, cvtext, normalize, storage, titles, users
+from . import ai, analytics, catalog, config, cvtext, normalize, owner, storage, titles, users
 from . import telegram_bot as tg
 
 log = logging.getLogger("rizq.bot")
@@ -234,6 +234,11 @@ def _edit_sub(chat_id, create=True, kind="user"):
             s["updated_at"] = storage.now_iso()
 
 
+def _ev(kind, chat_id, **data):
+    """One dashboard event (never fails the bot)."""
+    analytics.log_event(kind, chat_id, **data)
+
+
 def _ai_allowed(chat_id, limit=AI_DAILY_PER_CHAT):
     """Charge one AI use to this chat and to the bot's global daily share. False when over.
 
@@ -398,9 +403,18 @@ def split_query(text):
 
 # ---------------------------------------------------------------- messages
 
-def card(job):
+def _tracked(job, url, who):
+    """<site>/j/<job>.<person>: counted for the owner's dashboard, then straight on to `url`."""
+    if not (who and config.BOT_TRACK_CLICKS and config.PUBLIC_HOSTS and job.get("id")
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,40}", job["id"])):
+        return url
+    return f"https://{config.PUBLIC_HOSTS[0]}/j/{job['id']}.{who}"
+
+
+def card(job, who=""):
     """Title, company / city / age, then the direct link: the original apply page found behind the
-    re-posting site (its ads and "next" pages skipped), else the ad itself in its own source."""
+    re-posting site (its ads and "next" pages skipped), else the ad itself in its own source.
+    who: the reader's hashed id, so a click is counted (the link text still names the real site)."""
     url = normalize.original_link(job) if config.BOT_ORIGIN_ONLY else (job.get("apply_url") or job.get("url") or "")
     url = url or job.get("apply_url") or job.get("url") or ""
     apply = url != (job.get("url") or "") or job.get("source") == TELEGRAM_SOURCE
@@ -410,7 +424,7 @@ def card(job):
         lines.append(esc(" · ".join(meta)))
     src = job.get("source") or ""
     if url.startswith(("https://", "http://")):
-        href = html.escape(url, quote=True)
+        href = html.escape(_tracked(job, url, who), quote=True)
         host = esc(normalize.url_host(url))
         if job.get("via_jadarat") and apply:
             lines.append(f'🔗 <a href="{href}">رابط التقديم في جدارات</a> · نقلاً عن {esc(src)}')
@@ -428,9 +442,9 @@ def _hashtag(s):
     return "#" + re.sub(r"\s+", "_", s) if s else ""
 
 
-def feed_card(job):
+def feed_card(job, who=""):
     tags = " ".join(t for t in ("#وظائف", _hashtag(job.get("city")), _hashtag(job.get("specialty"))) if t)
-    text = card(job) + "\n" + tags
+    text = card(job, who) + "\n" + tags
     if config.TELEGRAM_BOT_USERNAME:
         text += (f'\n\n<a href="https://t.me/{config.TELEGRAM_BOT_USERNAME}">'
                  "وظائف تناسبك أنت فقط، من بوت مُنْفَرِد</a>")
@@ -510,8 +524,8 @@ def _take_page(sess, by_id):
     return page, sum(1 for x in ids[i:] if x in by_id)
 
 
-def _render_page(header, page, left, footer, sid):
-    parts = ([header] if header else []) + [card(j) for j in page]
+def _render_page(header, page, left, footer, sid, who=""):
+    parts = ([header] if header else []) + [card(j, who) for j in page]
     if left <= 0 and footer:
         parts.append(footer)
     markup = {"inline_keyboard": [[{"text": f"عرض المزيد ({left})", "callback_data": "more:" + sid}]]} \
@@ -532,7 +546,7 @@ def send_page(chat_id, header="", sid=None, by_id=None, max_wait=3):
         tg.send(chat_id, f"انتهت نتائج هذا البحث. اضغط {BTN_JOBS} للبحث من جديد.", reply_markup=MAIN_KB,
                 max_wait=max_wait)
         return
-    text, markup = _render_page(header, page, left, footer, cur_sid)
+    text, markup = _render_page(header, page, left, footer, cur_sid, analytics.who(chat_id))
     tg.send(chat_id, text, reply_markup=markup, max_wait=max_wait)
 
 
@@ -671,6 +685,8 @@ def show_jobs(chat_id, suggest=False):
             s["since"] = stamp
             _mark_sent(s, seen_new[:SENT_KEEP])
     names = "، ".join(t["title"] for t in sub["titles"])
+    _ev("search", chat_id, titles=[t["title"] for t in sub["titles"]], cities=cities_of(sub), exp=sub.get("exp") or "",
+        results=len(found))
     if not found:
         later = ("وسنرسل لك أي وظيفة مناسبة فور نزولها." if sub.get("mode") in ("daily", "instant")
                  else f"فعّل التنبيهات من {BTN_ALERTS} لتصلك أي وظيفة مناسبة فور نزولها.")
@@ -737,6 +753,10 @@ def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False, citie
         setup = s.get("setup") or ""
         now_titles = [t["title"] for t in s["titles"]]
         now_cities = cities_of(s)
+    if new:
+        _ev("title_add", chat_id, titles=new)
+    if cities:
+        _ev("city_add", chat_id, cities=cities)
     msg = []
     if new:
         msg.append("✅ أضفت: " + esc("، ".join(new)))
@@ -865,6 +885,8 @@ def finish_setup(chat_id, mid=None):
     with _edit_sub(chat_id) as s:
         s["setup"], s["setup_done"] = "", True
         sub = dict(s)
+    _ev("setup_done", chat_id, titles=len(sub.get("titles") or []), cities=cities_of(sub), exp=sub.get("exp") or "",
+        mode=sub.get("mode"))
     _show(chat_id, mid, ("✅ <b>تم! تنبيهاتك جاهزة</b>\n\n" + _summary(sub), None))
     tg.send(chat_id, _sub_note(sub), reply_markup=MAIN_KB)
     show_jobs(chat_id, suggest=True)
@@ -970,6 +992,10 @@ def remove_items(chat_id, rm_titles=(), rm_cities=()):
                 missing.append(c)
         if gone_c:
             _set_cities(s, cur)
+    if gone_t:
+        _ev("title_remove", chat_id, titles=gone_t)
+    if gone_c:
+        _ev("city_remove", chat_id, cities=gone_c)
     return gone_t, gone_c, missing
 
 
@@ -1003,8 +1029,10 @@ def apply_request(chat_id, req, ai_charged=False):
             if mode:
                 _set_mode(s, mode)
         if exp:
+            _ev("exp_set", chat_id, exp=exp)
             lines.append("🎓 الخبرة: " + esc(_exp_text("" if exp == "any" else exp)))
         if mode:
+            _ev("mode_set", chat_id, mode=mode)
             lines.append("⏰ التنبيهات: " + esc(_when_text(mode) or "متوقفة"))
     cities = [c for c in req.get("cities") or [] if c]
     if req.get("remote") and normalize.REMOTE not in cities:
@@ -1243,6 +1271,17 @@ def _end_setup(chat_id):
                 s["setup"] = ""
 
 
+def dash_login_request(chat_id, token):
+    """/start login_<token> from the dashboard's login page: only the owner gets the yes/no buttons."""
+    key, code = owner.ticket_for_bot(token)
+    if chat_id != owner.owner_chat() or not key:
+        return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
+    tg.send(chat_id, f"🔐 <b>طلب دخول للوحة مُنْفَرِد</b>\nالرمز الظاهر في الصفحة: <b>{code}</b>\n"
+                     "هل أنت من يحاول الدخول الآن؟ اضغط «نعم» فقط إذا كان الرمز مطابقاً.",
+            reply_markup={"inline_keyboard": [[{"text": "✅ نعم، أنا", "callback_data": "dl:yes:" + key},
+                                               {"text": "❌ لا", "callback_data": "dl:no:" + key}]]})
+
+
 def handle_private(msg):
     chat_id = msg["chat"]["id"]
     text = (msg.get("text") or "").strip()
@@ -1260,6 +1299,17 @@ def handle_private(msg):
     cmd, _, arg = text.partition(" ")
     cmd = cmd.split("@")[0].lower() if cmd.startswith("/") else ""
 
+    if cmd == "/start" and arg.strip().startswith("login_"):
+        return dash_login_request(chat_id, arg.strip()[6:])
+    if cmd == "/start" and arg.strip().startswith("owner_"):
+        ok_ = owner.link_owner(chat_id, arg.strip()[6:])
+        return tg.send(chat_id, "✅ تم ربط حسابك بلوحة مُنْفَرِد. الدخول للوحة يتم الآن بتأكيد منك هنا."
+                       if ok_ else "انتهت صلاحية رابط الربط. أنشئ رابطاً جديداً من اللوحة.", reply_markup=MAIN_KB)
+    if cmd == "/owner":
+        if owner.claim(chat_id, arg):
+            return tg.send(chat_id, "✅ صرت مالك لوحة مُنْفَرِد. افتح الموقع واضغط «الدخول عبر تيليجرام».",
+                           reply_markup=MAIN_KB)
+        return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
     if cmd == "/start" and arg.strip():
         return tg.handle_message(msg)  # older website-link flow (one-time token)
     if cmd == "/start":
@@ -1269,6 +1319,7 @@ def handle_private(msg):
             new_user = not s.get("titles")
             if not new_user:
                 s["setup"] = ""
+        _ev("start", chat_id, new=new_user)
         tg.send(chat_id, HELP, reply_markup=MAIN_KB)
         if new_user:
             wizard(chat_id, "titles")
@@ -1356,6 +1407,11 @@ def handle_callback(cb):
         return send_page(chat_id, sid=data[5:] if data.startswith("more:") else None)
     if data == "wipe:no":
         return _show(chat_id, mid, ("لم يُحذف شيء.", None))
+    if data.startswith(("dl:yes:", "dl:no:")):
+        yes = data.startswith("dl:yes:")
+        done = owner.answer(chat_id, data.split(":", 2)[2], yes)
+        return _show(chat_id, mid, (("✅ تم، دخلت اللوحة الآن." if yes else "🚫 رفضنا محاولة الدخول.")
+                                    if done else "انتهت صلاحية طلب الدخول هذا.", None))
     if data.startswith("try:"):
         i = _index(data[4:], len(EXAMPLES))
         return add_titles(chat_id, wanted=[EXAMPLES[i]]) if i is not None else None
@@ -1413,6 +1469,7 @@ def handle_callback(cb):
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
                 s["exp"] = "" if arg == "any" else arg
+        _ev("exp_set", chat_id, exp=arg)
         if in_setup:
             return wizard(chat_id, "cities", mid)
         return _show(chat_id, mid, alerts_menu(chat_id))
@@ -1420,6 +1477,7 @@ def handle_callback(cb):
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
                 _set_mode(s, data[5:])
+        _ev("mode_set", chat_id, mode=data[5:])
         if sub.get("setup") == "mode":
             return finish_setup(chat_id, mid)
         return _show(chat_id, mid, alerts_menu(chat_id))
@@ -1427,9 +1485,15 @@ def handle_callback(cb):
         return _show(chat_id, mid, cities_menu(chat_id, wizard_on=sub.get("setup") == "cities"))
     if data.startswith(("cty:", "city:")):
         arg = data.split(":", 1)[1]
+        before = set(cities_of(sub))
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
                 _toggle_city(s, arg)
+                after = set(cities_of(s))
+        if before - after:
+            _ev("city_remove", chat_id, cities=sorted(before - after))
+        if after - before:
+            _ev("city_add", chat_id, cities=sorted(after - before))
         return _show(chat_id, mid, cities_menu(chat_id, wizard_on=sub.get("setup") == "cities"))
     if data == "wipe:ask":
         t, kb = _wipe_question()
@@ -1440,6 +1504,7 @@ def handle_callback(cb):
 
 
 def wipe(chat_id):
+    _ev("delete", chat_id)
     with storage.edit("subscribers") as subs:
         subs.pop(_key(chat_id), None)
     with storage.edit("bot_sessions") as ss:
@@ -1517,6 +1582,7 @@ def start_feed(chat_id, arg):
         what += " عن بعد"
     elif city:
         what += f" في {esc(city)}"
+    _ev("feed_on", chat_id, titles=wanted, city=city)
     tg.send(chat_id, f"✅ سينشر مُنْفَرِد هنا {what}، بحد أقصى {config.BOT_FEED_DAILY_CAP} يومياً، "
                      "مع رابط الإعلان الأصلي لكل وظيفة.\nللإيقاف: /unfeed")
 
@@ -1547,6 +1613,7 @@ def handle_group(msg):
         return start_feed(chat_id, arg)
     with storage.edit("subscribers") as subs:
         subs.pop(_key(chat_id), None)
+    _ev("feed_off", chat_id)
     tg.send(chat_id, "أوقفنا نشر الوظائف هنا. لإعادته: /feed")
 
 
@@ -1582,6 +1649,7 @@ def already_handled(update_id):
 
 def mark_handled(update_id):
     with storage.edit("bot_state") as st:
+        st["last_update_at"] = storage.now_iso()
         seen = st.get("seen_updates") or []
         if update_id not in seen:
             st["seen_updates"] = (seen + [update_id])[-300:]
@@ -1645,7 +1713,7 @@ def on_new_jobs(added):
         return 0
     subs = storage.read("subscribers")
     today = date.today().isoformat()
-    enqueue, delivered, sent_msgs = {}, {}, 0
+    enqueue, delivered, sent_msgs, evs = {}, {}, 0, []
     for key, s in subs.items():
         if s.get("kind") == "feed":
             hits = search(s, fresh, all_if_no_titles=True)
@@ -1661,7 +1729,7 @@ def on_new_jobs(added):
         if not hits:
             continue
         shown = hits[:PAGE]
-        parts = ["🔔 " + f"{_ar_new_jobs(len(hits))} لك"] + [card(j) for j in shown]
+        parts = ["🔔 " + f"{_ar_new_jobs(len(hits))} لك"] + [card(j, analytics.who(s["chat_id"])) for j in shown]
         if len(hits) > len(shown):
             parts.append(f"والمزيد في {BTN_JOBS}.")
         try:
@@ -1671,7 +1739,9 @@ def on_new_jobs(added):
             continue
         sent_msgs += 1
         delivered[key] = [j["id"] for j in hits]
+        evs.append(("alert", s["chat_id"], {"n": len(hits), "type": "instant"}))
         time.sleep(0.05)
+    analytics.log_events(evs)
     if enqueue or delivered:  # one write for everyone
         with storage.edit("subscribers") as all_subs:
             for key, ids in delivered.items():
@@ -1724,7 +1794,7 @@ def feed_tick():
     results = {}   # key -> "ok" | "retry" | "gone" | ("moved", new_id)
     for k, (chat_id, job) in picked.items():
         try:
-            tg.send(chat_id, feed_card(job), max_wait=30)
+            tg.send(chat_id, feed_card(job, analytics.who(chat_id)), max_wait=30)
             results[k] = "ok"
         except tg.TelegramError as e:
             log.warning("feed post to %s failed: %r", chat_id, e)
@@ -1741,6 +1811,9 @@ def feed_tick():
                     break
             else:
                 results[k] = "skip"   # this job's message is rejected (e.g. bad text): never retry it
+    analytics.log_events([("feed_post", picked[k][0], {"job": picked[k][1]["id"], "title": picked[k][1].get("title"),
+                                                        "source": picked[k][1].get("source")})
+                          for k, res in results.items() if res == "ok"])
     posted = 0
     with storage.edit("subscribers") as all_subs:
         for k, res in results.items():
@@ -1812,12 +1885,14 @@ def digest_tick(now=None):
             page, left = _take_page(sess, by_id)
             ss[_key(s["chat_id"])] = sess
             header = f"🆕 <b>{_ar_new_jobs(len(hits))} لك اليوم</b>\nلـ: {esc(names)}"
-            outbox.append((s, hits, _render_page(header, page, left, sess["footer"], sess["sid"])))
+            outbox.append((s, hits, _render_page(header, page, left, sess["footer"], sess["sid"],
+                                                 analytics.who(s["chat_id"]))))
     sent, failed = 0, []
     for n, (s, hits, (text, markup)) in enumerate(outbox):
         try:
             tg.send(s["chat_id"], text, reply_markup=markup, max_wait=30)
             sent += 1
+            analytics.log_event("alert", s["chat_id"], n=len(hits), type="daily")
         except tg.TelegramError as e:
             log.warning("digest to %s failed: %r", s["chat_id"], e)
             if e.code == 0:                 # network down: nobody else gets it now either

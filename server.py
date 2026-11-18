@@ -23,7 +23,10 @@ from datetime import datetime
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-from backend import ai, auth, bot, catalog, config, normalize, notifier, posts, programs, storage, telegram_bot, users
+from urllib.parse import parse_qs
+
+from backend import (ai, analytics, auth, bot, catalog, config, normalize, notifier, owner, posts, programs, storage,
+                     telegram_bot, users, xlsx)
 
 ROOT = config.ROOT
 log = logging.getLogger("rizq")
@@ -176,6 +179,18 @@ def route(method, pattern):
     return deco
 
 
+class RawFile:
+    """A route's answer that is a file download, not JSON."""
+
+    def __init__(self, body, ctype, filename):
+        self.body, self.ctype, self.filename = body, ctype, filename
+
+
+# The old public job site's API: off while the site is the owner's private dashboard (PUBLIC_SITE=0)
+PUBLIC_API = ("/api/jobs", "/api/programs", "/api/settings", "/api/users", "/api/reports", "/api/posts")
+GO_RE = re.compile(r"^/j/([A-Za-z0-9_-]{1,40})(?:\.([ug][0-9a-f]{11}))?/?$")
+
+
 def ok(payload=None, cookies=()):
     out = {"ok": True}
     out.update(payload or {})
@@ -262,6 +277,41 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_file(self, f):
+        from urllib.parse import quote
+        self.send_response(200)
+        self.send_header("Content-Type", f.ctype)
+        self.send_header("Content-Length", str(len(f.body)))
+        self.send_header("Content-Disposition", f"attachment; filename=\"report.xlsx\"; filename*=UTF-8''{quote(f.filename)}")
+        self.end_headers()
+        self.wfile.write(f.body)
+
+    def query(self):
+        q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "", keep_blank_values=False)
+        return {k: v for k, v in q.items()}
+
+    def _go(self, path):
+        """/j/<job>.<person>: count the click for the owner's dashboard, then go to the original link."""
+        m = GO_RE.match(path)
+        target, job = "", None
+        if m:
+            job = catalog.find(m.group(1))
+            if job is None and config.DATABASE_URL:
+                job = analytics.jobs_rows(max_age=60).get(m.group(1))
+            target = normalize.original_link(job or {}) or (job or {}).get("url") or ""
+        if not target.startswith(("https://", "http://")) or any(c in target for c in "\r\n"):
+            target = f"https://t.me/{config.TELEGRAM_BOT_USERNAME}" if config.TELEGRAM_BOT_USERNAME else ""
+            if not target:
+                self.send_error(404)
+                return
+        else:
+            analytics.log_event("click", m.group(2), job=m.group(1), title=(job or {}).get("title", "")[:120],
+                                source=(job or {}).get("source", ""), city=(job or {}).get("city", ""))
+        self.send_response(302)
+        self.send_header("Location", target)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def body(self):
         ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         if ctype != "application/json":
@@ -300,6 +350,11 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(403)
             return
         path = self.path.split("?", 1)[0]
+        if path.startswith("/j/") and method in ("GET", "HEAD"):
+            return self._go(path)
+        if not config.PUBLIC_SITE and path.startswith(PUBLIC_API):
+            self._send_json(404, {"ok": False, "error": "غير موجود."})
+            return
         if not path.startswith("/api/"):
             if method in ("GET", "HEAD"):
                 if not self._is_public():
@@ -315,7 +370,11 @@ class Handler(SimpleHTTPRequestHandler):
             match = rx.match(path)
             if m == method and match:
                 try:
-                    status, payload, cookies = fn(self, *match.groups())
+                    res = fn(self, *match.groups())
+                    if isinstance(res, RawFile):
+                        self._send_file(res)
+                        return
+                    status, payload, cookies = res
                     self._send_json(status, payload, cookies)
                 except ApiError as e:
                     self._send_json(e.status, {"ok": False, "error": e.message})
@@ -472,6 +531,8 @@ def api_post_submit(h):
 @route("POST", "/api/admin/login")
 def api_admin_login(h):
     need_origin(h)
+    if owner.owner_chat():
+        raise ApiError(403, "الدخول الآن عبر تيليجرام فقط.")
     if not config.ADMIN_PASSWORD:
         raise ApiError(403, "لوحة الإدارة غير مفعّلة. أضف كلمة مرور الإدارة في إعدادات الخادم (env).")
     key = "admin:" + h.client_ip()
@@ -485,6 +546,146 @@ def api_admin_login(h):
     auth.login_limiter.reset(key)
     token = auth.create_session("admin", "admin")
     return ok(cookies=[Handler.session_cookie(auth.COOKIE_ADMIN, token, auth.ADMIN_SESSION_HOURS * 3600)])
+
+
+def _logged_in(h):
+    return bool(auth.get_session(h.cookie(auth.COOKIE_ADMIN), "admin"))
+
+
+@route("GET", "/api/admin/whoami")
+def api_admin_whoami(h):
+    return ok({"logged_in": _logged_in(h), "owner_linked": bool(owner.owner_chat()),
+               "password_login": bool(config.ADMIN_PASSWORD) and not owner.owner_chat(),
+               "bot": config.TELEGRAM_BOT_USERNAME})
+
+
+@route("POST", "/api/admin/tg-login/start")
+def api_tg_login_start(h):
+    need_origin(h)
+    if not owner.owner_chat() or not telegram_bot.enabled():
+        raise ApiError(409, "لم يُربط حساب تيليجرام باللوحة بعد.")
+    key = "tglogin:" + h.client_ip()
+    if auth.login_limiter.blocked(key):
+        raise ApiError(429, "محاولات كثيرة. حاول بعد 15 دقيقة.")
+    auth.login_limiter.fail(key)       # each ticket counts; a successful login resets it
+    ticket, code = owner.new_ticket()
+    return ok({"ticket": ticket, "code": code, "link": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=login_{ticket}"})
+
+
+@route("POST", "/api/admin/tg-login/check")
+def api_tg_login_check(h):
+    need_origin(h)
+    b = h.body()
+    ticket = b.get("ticket") if isinstance(b.get("ticket"), str) else ""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", ticket):
+        raise ApiError(400, "طلب غير صالح.")
+    state = owner.check_ticket(ticket)
+    if state != "approved":
+        return ok({"state": state})
+    auth.login_limiter.reset("tglogin:" + h.client_ip())
+    token = auth.create_session("admin", "owner")
+    analytics.log_event("login", None)
+    try:
+        telegram_bot.send(owner.owner_chat(), "🔐 تم تسجيل دخول جديد للوحة مُنْفَرِد الآن. إن لم تكن أنت، أخبرنا فوراً.")
+    except Exception:
+        pass
+    return ok({"state": "approved"}, cookies=[Handler.session_cookie(auth.COOKIE_ADMIN, token, auth.ADMIN_SESSION_HOURS * 3600)])
+
+
+@route("POST", "/api/admin/owner-link")
+def api_admin_owner_link(h):
+    _admin_post(h)
+    if not telegram_bot.enabled():
+        raise ApiError(409, "البوت غير مفعّل.")
+    return ok({"link": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=owner_{owner.new_owner_link()}"})
+
+
+# ---------------------------------------------------------------- owner dashboard
+
+def _list(q, key):
+    return [v for x in q.get(key, []) for v in x.split("|") if v][:60]
+
+
+def _job_filter(q):
+    return {"q": (q.get("q") or [""])[0][:100], "cities": _list(q, "city"), "exp": _list(q, "exp"),
+            "sources": _list(q, "source"), "kinds": _list(q, "kind"), "status": _list(q, "status") or ["live"],
+            "from": (q.get("from") or [""])[0][:10], "to": (q.get("to") or [""])[0][:10],
+            "helper": (q.get("helper") or [""])[0] == "1"}
+
+
+@route("GET", "/api/admin/dash/overview")
+def api_dash_overview(h):
+    h.admin()
+    return ok(analytics.overview())
+
+
+@route("GET", "/api/admin/dash/jobs")
+def api_dash_jobs(h):
+    h.admin()
+    q = h.query()
+    try:
+        page = int((q.get("page") or ["0"])[0])
+    except ValueError:
+        page = 0
+    return ok(analytics.jobs_page(_job_filter(q), page))
+
+
+@route("GET", "/api/admin/dash/sources")
+def api_dash_sources(h):
+    h.admin()
+    return ok(analytics.sources_report())
+
+
+@route("GET", "/api/admin/dash/users")
+def api_dash_users(h):
+    h.admin()
+    return ok(analytics.users_report())
+
+
+@route("GET", "/api/admin/dash/live")
+def api_dash_live(h):
+    h.admin()
+    try:
+        since = int((h.query().get("since") or ["0"])[0])
+    except ValueError:
+        since = 0
+    out = analytics.live_feed(since)
+    out["bot"] = analytics.bot_status()
+    return ok(out)
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@route("GET", r"/api/admin/export/(jobs|sources|users|events|all)")
+def api_dash_export(h, kind):
+    h.admin()
+    a = analytics
+    today = datetime.now().strftime("%Y-%m-%d")
+    sheets = []
+    if kind in ("jobs", "all"):
+        sheets.append(a.sheet_jobs(a.filter_jobs(_job_filter(h.query()) if kind == "jobs" else
+                                                 {"status": ["live", "expired", "archived"]})))
+    if kind in ("sources", "all"):
+        rep = a.sources_report()
+        sheets.append(a.sheet_sources(rep))
+        sheets.append(("حالة المجمّعات", ["المصدر", "الحالة", "الرسالة", "آخر تشغيل", "جُلب", "أُضيف", "يحتاج جهازي"],
+                       [[c["name"], c["status"], c["message"], c["last_run"], c["fetched"], c["added"],
+                         "نعم" if c["needs_helper"] else ""] for c in rep["collectors"]]))
+    if kind in ("users", "all"):
+        u = a.users_report()
+        sheets.append(a.sheet_users())
+        sheets.append(a.sheet_pairs("الطلب والعرض", ["المسمى", "عدد الأشخاص", "الوظائف الحالية"],
+                                    [(d["title"], d["people"], d["jobs"]) for d in u["demand"]]))
+        sheets.append(a.sheet_pairs("المدن المطلوبة", ["المدينة", "عدد الأشخاص"], u["cities"]))
+        sheets.append(a.sheet_pairs("بحث بلا نتائج", ["المسميات", "مرات البحث"], u["zero_results"]))
+        sheets.append(a.sheet_pairs("أكثر الوظائف ضغطاً", ["الوظيفة", "المصدر", "الضغطات"],
+                                    [(c["title"], c["source"], c["n"]) for c in u["top_clicked"]]))
+        sheets.append(a.sheet_pairs("القمع", ["المرحلة", "عدد الأشخاص"], u["funnel"]))
+    if kind in ("events", "all"):
+        sheets.append(a.sheet_events())
+    names = {"jobs": "الوظائف", "sources": "المصادر", "users": "المستخدمون", "events": "الأحداث", "all": "تقرير-شامل"}
+    return RawFile(xlsx.workbook(sheets), XLSX, f"منفرد-{names[kind]}-{today}.xlsx")
 
 
 @route("POST", "/api/admin/logout")

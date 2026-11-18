@@ -46,6 +46,7 @@ COLLECTIONS = {
     "inbox": ("inbox.json", dict),                 # source key -> batches fetched by the Saudi helper (tools/saudi_helper.py)
     "recent_jobs": ("recent_jobs.json", dict),     # cloud: jobs stored in the last days, until Vercel's snapshot has them
     "rate_limits": ("rate_limits.json", dict),     # cloud: login / post / report attempts per key (shared by all instances)
+    "events": ("events.json", list),               # local mode only: bot events for the dashboard (cloud: rizq.events)
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode

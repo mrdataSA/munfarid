@@ -103,7 +103,7 @@ def _load_env():
     return values
 
 
-_ENV = _load_env()
+_ENV = {} if os.environ.get("RIZQ_NO_ENV_FILE") else _load_env()   # tests: never the real secrets
 
 
 def get(key, default=""):
@@ -130,6 +130,10 @@ BOT_FEED_DAILY_CAP = get_int("BOT_FEED_DAILY_CAP", 80)            # max jobs pos
 BOT_ORIGIN_ONLY = get("BOT_ORIGIN_ONLY", "1") != "0"
 # Reading a CV in the bot ("coming soon" for now; the code is kept for later)
 BOT_CV_ENABLED = get("BOT_CV_ENABLED", "0") == "1"
+# Job links in the bot go through <site>/j/<job> (counted for the owner's dashboard, then straight on)
+BOT_TRACK_CLICKS = get("BOT_TRACK_CLICKS", "1") != "0"
+# The site is the owner's private dashboard; the old public job site and its public API are off
+PUBLIC_SITE = get("PUBLIC_SITE", "0") == "1"
 X_BEARER_TOKEN = get("X_BEARER_TOKEN")
 X_DAILY_POST_CAP = get_int("X_DAILY_POST_CAP", 300)
 CAREERJET_API_KEY = get("CAREERJET_API_KEY")
