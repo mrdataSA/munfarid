@@ -380,6 +380,23 @@ def detect_city(*texts):
     return ""
 
 
+def detect_cities(*texts):
+    """Every city mentioned, in the order written ("الرياض وجدة" -> ["الرياض", "جدة"])."""
+    hay = norm(" ".join(t for t in texts if t))
+    found = []
+    for city, aliases in CITY_ALIASES.items():
+        if city == REMOTE:
+            continue
+        if city in AMBIGUOUS_CITY_CONTEXT:
+            positions = [hay.find(norm(c)) for c in AMBIGUOUS_CITY_CONTEXT[city]]
+        else:
+            positions = [_first_pos(hay, a) for a in aliases]
+        positions = [p for p in positions if p >= 0]
+        if positions:
+            found.append((min(positions), city))
+    return [c for _, c in sorted(found)]
+
+
 def canonical_city(value):
     """Map a free-form location string to a canonical city ('' if unknown)."""
     return detect_city(value)
@@ -617,6 +634,7 @@ def make_job(*, title, source, url="", company="", city="", specialty="", skills
         "nationality": nationality,
         "gender": gender,
         "scam_risk": scam,
+        "exp_years": detect_experience(title, raw_text),
         "is_demo": False,
         "collected_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
@@ -627,3 +645,97 @@ def is_expired(job, max_age_days):
     if not d:
         return False
     return (date.today() - date.fromisoformat(d)).days > max_age_days
+
+
+# ---------------------------------------------------------------- original links (relay sites)
+
+# Sites that RE-POST other employers' ads (articles full of ads and "next" pages). Their page is
+# never the job's original: collectors.origin opens it, skips to the real apply link and stores it
+# as `apply_url`. A job whose only link is one of these is not shown by the bot (BOT_ORIGIN_ONLY).
+RELAY_HOSTS = ("saudijobs24.com", "joborr.com", "sahm0.com", "dlil.org", "wdeftksa.com", "linkedksa.com",
+               "almowaten.net", "wzaifs.com", "jadarat.news", "ewdifh.com", "wadhefa.com", "sauditawdhef.com",
+               "shagher-jobs.com", "alhazem.sa", "t.me", "telegram.me")
+
+
+def url_host(url):
+    from urllib.parse import urlsplit
+    try:
+        host = urlsplit(url or "").netloc.lower().split("@")[-1].split(":")[0]
+    except ValueError:
+        return ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def is_relay_url(url):
+    host = url_host(url)
+    return bool(host) and any(host == h or host.endswith("." + h) for h in RELAY_HOSTS)
+
+
+def original_link(job):
+    """The link the visitor should open: the original apply page, else the ad itself when its site
+    is the original source; '' when the only link is a relay page (not resolved yet)."""
+    for link in (job.get("apply_url"), job.get("url")):
+        link = str(link or "")
+        if link.startswith("mailto:"):
+            return link
+        if link.startswith(("http://", "https://")) and not is_relay_url(link):
+            return link
+    return ""
+
+
+# ---------------------------------------------------------------- experience
+
+# The person's experience -> (fewest, most) years. A job is shown when the years it asks for fit.
+EXPERIENCE = {
+    "entry": ("حديث تخرج / بدون خبرة", 0, 1),
+    "junior": ("من سنة إلى 3 سنوات", 1, 3),
+    "mid": ("من 3 إلى 7 سنوات", 3, 7),
+    "senior": ("أكثر من 7 سنوات", 7, 60),
+}
+_ENTRY_RE = re.compile(r"حديث\w* (?:ال)?تخرج|حديثي التخرج|بدون خبره|لا يشترط (?:ال)?خبره|لا تشترط (?:ال)?خبره|"
+                       r"fresh ?grad|new grad|graduate program|entry[ -]level|no experience|"
+                       r"تدريب منتهي بالتوظيف|متدرب|internship|\bintern\b|تعاوني")
+_YEARS_RE = re.compile(r"(?<![\d.])(\d{1,2})\s*(?:\+|-|–|to|الى|إلى)?\s*(?:\d{1,2}\s*)?"
+                       r"(?:years?|yrs?|سنوات|سنة|سنه|سنين|اعوام|عام)")
+_YEARS_CTX_RE = re.compile(r"experience|exp\b|خبره|خبرة|الخبرات")
+_YEARS_AFTER_RE = re.compile(r"(?:سنوات (?:ال)?خبره|years of experience|experience)\s*[:：-]?\s*(\d{1,2})(?![\d.])")
+_AGE_RE = re.compile(r"(?:^|[^\w])(?:عمر|العمر|عمره|سن|السن|اعمار|age|aged)(?![\w])")
+_SENIOR_TITLE_RE = re.compile(r"\b(?:senior|sr|lead|principal|head|director|chief|vp)\b|كبير|اول\b|مدير|رئيس")
+_JUNIOR_TITLE_RE = re.compile(r"\b(?:junior|jr|graduate|trainee)\b|مبتدئ")
+_WORD_YEARS = {"سنتين": 2, "سنتان": 2, "عامين": 2, "عامان": 2, "سنه واحده": 1, "عام واحد": 1}
+
+
+def detect_experience(title, text=""):
+    """Fewest years of experience a job asks for (0 = graduates welcome), or None if it doesn't say."""
+    t, body = norm(title), norm(text)[:2500]
+    if _ENTRY_RE.search(t) or _JUNIOR_TITLE_RE.search(t):
+        return 0
+    years = []
+    for m in _YEARS_RE.finditer(body):
+        around = body[max(0, m.start() - 60):m.end() + 40]
+        if _AGE_RE.search(body[max(0, m.start() - 25):m.start()]):
+            continue   # "لا يتجاوز العمر 30 سنة" is an age limit
+        if _YEARS_CTX_RE.search(around):
+            n = int(m.group(1))
+            if n <= 30:
+                years.append(n)
+    years += [int(m.group(1)) for m in _YEARS_AFTER_RE.finditer(body) if int(m.group(1)) <= 30]
+    for w, n in _WORD_YEARS.items():
+        i = body.find(w)
+        if i >= 0 and _YEARS_CTX_RE.search(body[max(0, i - 40):i + 40]):
+            years.append(n)
+    if years:
+        return min(years)
+    if _ENTRY_RE.search(body):
+        return 0
+    if _SENIOR_TITLE_RE.search(t):
+        return 5
+    return None
+
+
+def experience_fits(level, job_years):
+    """Does a job asking for `job_years` suit a person at `level` ('' = any)?"""
+    if not level or level not in EXPERIENCE or job_years is None:
+        return True
+    _, lo, hi = EXPERIENCE[level]
+    return job_years <= hi and job_years >= max(0, lo - 3)

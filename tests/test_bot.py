@@ -64,6 +64,11 @@ def fake_chat_json(system, user, max_tokens=1500, models=None, quick=False):
         said = json.loads(user)
         if "accounting" in said:
             return {"intent": "search", "titles": ["accountant"], "city": "جدة", "remote": False}
+        if "شيل الرياض" in said:
+            return {"intent": "edit", "titles": [], "remove_titles": [], "cities": [], "remove_cities": ["الرياض"],
+                    "remote": True, "experience": "", "mode": "instant"}
+        if "خمس سنوات" in said:
+            return {"intent": "edit", "titles": [], "cities": [], "experience": "mid", "mode": ""}
         if "how does" in said.lower():
             return {"intent": "help", "titles": [], "city": "", "remote": False}
         return {"intent": "other", "titles": [], "city": "", "remote": False}
@@ -146,11 +151,36 @@ try:
     bot.handle_update(msg(U, "ابغى وظيفة محاسب بالرياض"))
     sub = bot.get_sub(U)
     check("titles: filler words removed", [t["title"] for t in sub["titles"]] == ["محاسب"], sub["titles"])
-    check("titles: city detected", sub["city"] == "الرياض")
+    check("titles: city detected", bot.cities_of(sub) == ["الرياض"], sub)
     variants = sub["titles"][0]["variants"]
     check("titles: AI variants kept, generic 'مدير' dropped", "accountant" in variants and "مدير" not in variants,
           variants)
-    out = "\n".join(texts_to(U)[-2:])
+
+    def buttons(chat_id):
+        return [b for row in last_markup(chat_id).get("inline_keyboard") or [] for b in row]
+    check("wizard: after the titles, 'next' to the experience step",
+          any(b.get("callback_data") == "wiz:exp" for b in buttons(U)), buttons(U))
+    check("wizard: no job list before the steps end", not any("وجدنا" in t for t in texts_to(U)))
+    bot.handle_update(cb(U, "wiz:exp"))
+    check("wizard: step 2 = experience", "الخطوة 2 من 4" in texts_to(U)[-1]
+          and any(b["callback_data"] == "exp:entry" for b in buttons(U)))
+    bot.handle_update(cb(U, "exp:any"))
+    check("wizard: step 3 = cities, Riyadh already ticked", "الخطوة 3 من 4" in texts_to(U)[-1]
+          and any(b["text"] == "✅ الرياض" for b in buttons(U)), buttons(U))
+    jed = bot.CITIES.index("جدة")
+    bot.handle_update(cb(U, f"cty:{jed}"))
+    check("cities: several cities", bot.cities_of(bot.get_sub(U)) == ["الرياض", "جدة"])
+    check("cities: Jeddah job found with two cities",
+          "j100" in [j["id"] for j in bot.search(bot.get_sub(U), bot._jobs())])
+    bot.handle_update(cb(U, f"cty:{jed}"))
+    check("cities: tap again removes", bot.cities_of(bot.get_sub(U)) == ["الرياض"])
+    bot.handle_update(cb(U, "wiz:mode"))
+    check("wizard: step 4 = timing", "الخطوة 4 من 4" in texts_to(U)[-1])
+    bot.handle_update(cb(U, "mode:daily"))
+    sub = bot.get_sub(U)
+    check("wizard: finished, summary sent", sub.get("setup_done") and not sub.get("setup")
+          and any("تنبيهاتك جاهزة" in t for t in texts_to(U)))
+    out = next((t for t in reversed(texts_to(U)) if "وجدنا" in t), "")
     check("search: result header + count", "وجدنا" in out and "محاسب" in out, out[:200])
     check("search: links to the original ad", "https://example.com/job/" in out)
     check("search: HTML escaped", "<script>" not in out and "&lt;script&gt;" in out)
@@ -167,7 +197,7 @@ try:
 
     # generic-titled post found through its text
     with bot._edit_sub(U) as s:
-        s["city"] = ""
+        bot._set_cities(s, [])
     found = [j["id"] for j in bot.search(bot.get_sub(U), bot._jobs())]
     check("search: generic-titled post matched by its text", "j102" in found)
     check("search: all cities now include Jeddah English title", "j100" in found)
@@ -191,6 +221,16 @@ try:
     dels = [b[0]["callback_data"] for b in kb]
     bot.handle_update(cb(U, dels[1]))
     check("titles: delete one", [t["title"] for t in bot.get_sub(U)["titles"]] == ["محاسب"])
+
+    # ------------------------------------------------------------ CV: "coming soon" by default
+    n_ai = len(ai_calls)
+    bot.handle_update(msg(U, document={"file_id": "F0", "file_name": "cv.pdf", "file_size": 10}))
+    check("cv off: a file gets 'coming soon', no AI", "قريباً" in texts_to(U)[-1] and len(ai_calls) == n_ai)
+    bot.handle_update(msg(U, bot.BTN_CV))
+    check("cv off: the CV button says 'coming soon'", "قريباً" in texts_to(U)[-1])
+    check("cv off: the CV button is marked on the keyboard",
+          any("قريباً" in b["text"] for row in bot.MAIN_KB["keyboard"] for b in row))
+    config.BOT_CV_ENABLED = True
 
     # ------------------------------------------------------------ CV (file)
     doc = io.BytesIO()
@@ -222,6 +262,7 @@ try:
     bot.handle_update(msg(U, bot.BTN_CV))
     bot.handle_update(msg(U, "خريج محاسبة، تدربت في مكتب تدقيق ستة أشهر، أجيد Excel وقيود اليومية"))
     check("cv text: read after pressing سيرتي", len(ai_calls) == n_ai + 1)
+    config.BOT_CV_ENABLED = False
 
     # ------------------------------------------------------------ daily digest
     with bot._edit_sub(U) as s:
@@ -310,6 +351,7 @@ try:
     bot.handle_update(msg(V, "/start"))
     with bot._edit_sub(V) as s:
         s["since"] = (now - timedelta(days=5)).isoformat(timespec="seconds")
+        s["setup"], s["setup_done"] = "", True
     bot.handle_update(msg(V, "محاسب"))
     before = len(texts_to(V))
     bot.digest_tick(datetime.now().replace(hour=23))
@@ -478,10 +520,11 @@ try:
     bot.handle_update(msg(W, "I'm looking for accounting jobs in Jeddah please"))
     sw = bot.get_sub(W)
     check("english sentence: AI reads the title", [t["title"] for t in sw["titles"]] == ["accountant"], sw["titles"])
-    check("english sentence: city read", sw["city"] == "جدة", sw["city"])
+    check("english sentence: city read", bot.cities_of(sw) == ["جدة"], sw)
     check("english sentence: Jeddah job found", "j100" in [j["id"] for j in bot.search(sw, bot._jobs())])
-    out = "\n".join(texts_to(W)[-4:])
-    check("first title: subscription explained", "تم اشتراكك" in out and "رابطها الأصلي" in out, out[:300])
+    check("first title without /start: the guided steps start", sw.get("setup") == "titles"
+          and any(b.get("callback_data") == "wiz:exp" for row in last_markup(W).get("inline_keyboard") or []
+                  for b in row))
     n_ai = len(ai_calls)
     bot.handle_update(msg(W, "I'm looking for accounting jobs in Jeddah please"))
     check("same sentence again: cached, no new AI call", len([c for c in ai_calls[n_ai:]
@@ -498,8 +541,9 @@ try:
 
     X = 9102
     bot.handle_update(cb(X, "try:0"))
-    check("example button: adds the title and searches", [t["title"] for t in bot.get_sub(X)["titles"]] == ["محاسب"]
-          and any("وجدنا" in t for t in texts_to(X)))
+    check("example button: adds the title, then the next step",
+          [t["title"] for t in bot.get_sub(X)["titles"]] == ["محاسب"]
+          and any("التالي" in b.get("text", "") for row in last_markup(X).get("inline_keyboard") or [] for b in row))
 
     storage.write("jobs", storage.read("jobs") + [
         job(601, "مدقق حسابات", days=1), job(602, "مدقق حسابات أول", days=1),
@@ -508,6 +552,8 @@ try:
         job(604, "مدقق حسابات - الرياض", source="أخبار الوظائف (jadarat.news)", days=1,
             apply_url="https://careers.example.gov.sa/apply/1")])
     S = 9103
+    with bot._edit_sub(S) as s:
+        s["setup_done"] = True   # an existing person (no guided steps): results right away
     bot.handle_update(msg(S, "مراجع حسابات"))
     mk = last_markup(S).get("inline_keyboard") or []
     labels = [b["text"] for row in mk for b in row]
@@ -547,6 +593,104 @@ try:
         s["titles"].append({"title": "مراجع حسابات", "variants": ["مراجع حسابات"], "from": "user"})
     found = [j["id"] for j in bot.search(bot.get_sub(S), bot._jobs())]
     check("sources: Jadarat includes jobs relayed from Jadarat", "j603" in found and "j601" not in found, found)
+
+    # ------------------------------------------------------------ alerts panel + edits typed in the chat
+    E = 9201
+    with bot._edit_sub(E) as s:
+        s["setup_done"] = True
+        s["titles"] = [{"title": "محاسب", "variants": ["محاسب", "accountant"]},
+                       {"title": "مهندس مدني", "variants": ["مهندس مدني"]}]
+        bot._set_cities(s, ["الرياض", "جدة"])
+    bot.handle_update(msg(E, bot.BTN_ALERTS))
+    panel = texts_to(E)[-1]
+    labels = [b["callback_data"] for row in last_markup(E)["inline_keyboard"] for b in row]
+    check("alerts panel: summary of titles, cities, experience, timing", "محاسب" in panel and "جدة" in panel
+          and "الخبرة" in panel and "التوقيت" in panel, panel)
+    check("alerts panel: add/remove titles and cities, experience, timing",
+          {"titles", "cty:menu", "exp:menu", "mode:instant"} <= set(labels), labels)
+    bot.handle_update(msg(E, bot.BTN_SETTINGS))
+    check("old 'settings' button opens the same panel", "تنبيهاتك" in texts_to(E)[-1])
+    bot.handle_update(msg(E, "احذف جدة"))
+    check("typed edit: 'احذف جدة' removes the city", bot.cities_of(bot.get_sub(E)) == ["الرياض"], bot.get_sub(E))
+    bot.handle_update(msg(E, "ضيف الدمام"))
+    check("typed edit: 'ضيف الدمام' adds the city", bot.cities_of(bot.get_sub(E)) == ["الرياض", "الدمام"])
+    check("typed edit: 'احذف جدة ومحاسب' = one city + one title",
+          bot.parse_edit("احذف جدة ومحاسب") == ("remove", ["محاسب"], ["جدة"]))
+    bot.handle_update(msg(E, "شيل مهندس مدني"))
+    check("typed edit: 'شيل مهندس مدني' removes the title",
+          [t["title"] for t in bot.get_sub(E)["titles"]] == ["محاسب"])
+    bot.handle_update(msg(E, "احذف طيار"))
+    check("typed edit: unknown title explained", "لم أجد" in texts_to(E)[-1])
+    bot.handle_update(msg(E, "أضف مدقق حسابات"))
+    check("typed edit: 'أضف مدقق حسابات' adds the title and shows its jobs",
+          "مدقق حسابات" in [t["title"] for t in bot.get_sub(E)["titles"]]
+          and any("وجدنا" in t for t in texts_to(E)[-4:]))
+    bot.handle_update(msg(E, "خلني اشوف وظايف عن بعد وشيل الرياض وارسلها اول باول"))
+    se = bot.get_sub(E)
+    check("AI edit: city removed, remote added, instant alerts", bot.cities_of(se) == ["الدمام", "عن بعد"]
+          and se["mode"] == "instant", se)
+    bot.handle_update(msg(E, "عندي خبرة خمس سنوات"))
+    check("AI edit: experience understood", bot.get_sub(E)["exp"] == "mid", bot.get_sub(E).get("exp"))
+    real_allowed = bot._ai_allowed
+    bot._ai_allowed = lambda chat_id, limit=0: False
+    try:
+        bot.handle_update(msg(E, "خبرتي سنتين"))
+        check("no AI: experience read locally", bot.get_sub(E)["exp"] == "junior", bot.get_sub(E).get("exp"))
+        bot.handle_update(msg(E, "فني مختبر"))
+        check("no AI: 'مختبر' is still a job title", "فني مختبر" in [t["title"] for t in bot.get_sub(E)["titles"]])
+        bot.handle_update(msg(E, "بدون خبرة"))
+        check("'بدون خبرة' is experience, not a removal", bot.get_sub(E)["exp"] == "entry", bot.get_sub(E).get("exp"))
+        bot.handle_update(msg(E, "جدة"))
+        check("a city alone is added to the cities", "جدة" in bot.cities_of(bot.get_sub(E)))
+    finally:
+        bot._ai_allowed = real_allowed
+
+    # an unfinished guided setup ends when the person opens their jobs
+    Q = 9301
+    bot.handle_update(msg(Q, "/start"))
+    bot.handle_update(msg(Q, "محاسب"))
+    bot.handle_update(cb(Q, "wiz:exp"))
+    bot.handle_update(msg(Q, bot.BTN_JOBS))
+    check("unfinished setup: 'my jobs' leaves it and shows the jobs", not bot.get_sub(Q).get("setup")
+          and "وجدنا" in texts_to(Q)[-1])
+    bot.on_new_jobs([job(900, "محاسب فرع", url="https://www.saudijobs24.com/t9-x", collected=now.isoformat())])
+    check("instant/feeds: a relay job without its original link is not sent", "محاسب فرع" not in "".join(texts_to(D)))
+
+    # experience filter
+    storage.write("jobs", storage.read("jobs") + [
+        job(701, "محاسب", raw_text="خبرة لا تقل عن 8 سنوات في المحاسبة"),
+        job(702, "محاسب حديث التخرج"),
+        job(703, "Senior Accountant", exp_years=6)])
+    with bot._edit_sub(E) as s:
+        s["exp"], s["cities"] = "entry", []
+    ids = [j["id"] for j in bot.search(bot.get_sub(E), bot._jobs())]
+    check("experience: graduate sees graduate jobs + jobs that don't say", "j702" in ids and "j0" in ids
+          and "j701" not in ids and "j703" not in ids, ids)
+    with bot._edit_sub(E) as s:
+        s["exp"] = "senior"
+    ids = [j["id"] for j in bot.search(bot.get_sub(E), bot._jobs())]
+    check("experience: senior sees senior jobs, not graduate ones", "j701" in ids and "j703" in ids
+          and "j702" not in ids, ids)
+    bot.handle_update(cb(E, "exp:menu"))
+    bot.handle_update(cb(E, "exp:any"))
+    check("experience: 'any' clears it", bot.get_sub(E)["exp"] == "")
+
+    # only original links: a relay page that was not resolved yet is never shown
+    storage.write("jobs", storage.read("jobs") + [
+        job(801, "محاسب علاقات", source="وظائف السعودية 24", url="https://www.saudijobs24.com/t190991-x"),
+        job(802, "محاسب موارد", source="وظائف السعودية 24", url="https://www.saudijobs24.com/t190992-x",
+            apply_url="https://careers.zatca.gov.sa/job/1"),
+        job(803, "محاسب قنوات", source=bot.TELEGRAM_SOURCE, url="https://t.me/somechannel/5"),
+        job(804, "محاسب نموذج", source=bot.TELEGRAM_SOURCE, url="https://forms.gle/abc")])
+    shown = {j["id"] for j in bot._jobs()}
+    check("origin only: unresolved relay page hidden", "j801" not in shown and "j803" not in shown, shown)
+    check("origin only: resolved relay job shown", "j802" in shown and "j804" in shown)
+    c802 = bot.card(next(j for j in bot._jobs() if j["id"] == "j802"))
+    check("card: original apply link with its site, relay named", "https://careers.zatca.gov.sa/job/1" in c802
+          and "careers.zatca.gov.sa" in c802 and "saudijobs24.com/t" not in c802 and "نقلاً عن" in c802, c802)
+    c804 = bot.card(next(j for j in bot._jobs() if j["id"] == "j804"))
+    check("card: a channel's link is an apply link, not 'the channel's ad'", "رابط التقديم" in c804
+          and "forms.gle" in c804, c804)
 
     # ------------------------------------------------------------ hygiene
     src = open(os.path.join(ROOT, "backend", "bot.py"), encoding="utf-8").read() + \

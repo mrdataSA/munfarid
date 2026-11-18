@@ -9,6 +9,8 @@ import os
 import re
 from datetime import date, timedelta
 
+from backend import normalize
+
 from . import base, dom
 
 CHANNELS_FILE = os.path.join(os.path.dirname(__file__), "channels.txt")
@@ -42,8 +44,10 @@ def parse_channel(html_text, handle):
         if when and when < cutoff:
             continue
         links = [a.attrs.get("href", "") for a in text_node.find_all("a")]
-        external = next((l for l in links if l.startswith("http") and not any(
-            bad in l for bad in SKIP_LINK_HOSTS)), "")
+        links = [l for l in links if l.startswith("http") and not any(bad in l for bad in SKIP_LINK_HOSTS)]
+        # the employer's own link first; a relay article only when the post has nothing else
+        # (collectors.origin then follows it to the original link)
+        external = next((l for l in links if not normalize.is_relay_url(l)), "") or (links[0] if links else "")
         first_line = next((l for l in text.split("\n") if len(l.strip()) > 5), text[:80])
         posts.append({
             "title": first_line[:140],

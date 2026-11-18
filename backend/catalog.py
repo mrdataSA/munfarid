@@ -185,6 +185,39 @@ def merge_collected(new_jobs):
     return [j for j in added if j["id"] in kept]
 
 
+def set_apply_links(links):
+    """Stored jobs whose relay page (their url or apply_url) is a key of `links` get the original
+    link found behind it. Returns how many jobs changed."""
+    if not links:
+        return 0
+    changed = 0
+    with storage.edit("jobs") as jobs:
+        for j in jobs:
+            for key in (j.get("apply_url"), j.get("url")):
+                link = links.get(key or "")
+                if not link or not str(link).lower().startswith(("http://", "https://")):
+                    continue
+                if normalize.original_link(j) or link == j.get("url"):
+                    break
+                j["apply_url"] = str(link)[:1000]
+                if _is_jadarat(link) and not _is_jadarat(j.get("url")) and j.get("source") != JADARAT_SOURCE:
+                    j["via_jadarat"] = True
+                changed += 1
+                break
+    if changed and config.DATABASE_URL:
+        # the bot on Vercel reads the deployed snapshot: recent jobs in the database get the link too
+        with storage.edit("recent_jobs") as recent:
+            for j in recent.values():
+                for key in (j.get("apply_url"), j.get("url")):
+                    link = links.get(key or "")
+                    if link and not normalize.original_link(j):
+                        j["apply_url"] = str(link)[:1000]
+                        if _is_jadarat(link) and not _is_jadarat(j.get("url")) and j.get("source") != JADARAT_SOURCE:
+                            j["via_jadarat"] = True
+                        break
+    return changed
+
+
 def find(job_id):
     jobs, _ = all_jobs()
     return next((j for j in jobs if j.get("id") == job_id), None)

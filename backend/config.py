@@ -126,6 +126,10 @@ TELEGRAM_BOT_TOKEN = get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_BOT_USERNAME = get("TELEGRAM_BOT_USERNAME").lstrip("@")
 BOT_DIGEST_HOUR = min(max(get_int("BOT_DIGEST_HOUR", 9), 0), 23)   # daily new-jobs message (local time)
 BOT_FEED_DAILY_CAP = get_int("BOT_FEED_DAILY_CAP", 80)            # max jobs posted per group/channel per day
+# The bot shows only jobs with an original link (a relay page that was not resolved yet stays hidden)
+BOT_ORIGIN_ONLY = get("BOT_ORIGIN_ONLY", "1") != "0"
+# Reading a CV in the bot ("coming soon" for now; the code is kept for later)
+BOT_CV_ENABLED = get("BOT_CV_ENABLED", "0") == "1"
 X_BEARER_TOKEN = get("X_BEARER_TOKEN")
 X_DAILY_POST_CAP = get_int("X_DAILY_POST_CAP", 300)
 CAREERJET_API_KEY = get("CAREERJET_API_KEY")

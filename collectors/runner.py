@@ -20,6 +20,8 @@ from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_wa
 
 log = logging.getLogger("rizq.collect")
 ENRICH_BEFORE_ALERT = 8    # new jobs per source classified by AI before alerting (one Groq call)
+ORIGIN_FULL_SECONDS = 900   # relay pages opened per full run (new items + backfill), all sources together
+ORIGIN_FAST_SECONDS = 300
 ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at half the daily budget)
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
@@ -61,6 +63,21 @@ def from_helper(source):
     else:
         source["_note"] = "يحجب خوادم السحابة: يُجلب فقط عبر مساعد بعنوان سعودي (غير مفعّل حالياً)"
     return items
+
+
+# Never fetched from a home connection to get past a refusal: LinkedIn has its own polite pacing
+# and pauses, X is API-only, and a rate limit (429) means "slow down", not "wrong network"
+HELPER_NEVER = ("linkedin", "x")
+
+
+def helper_can_fetch(source, message=""):
+    """May the Saudi helper fetch this source when the cloud is refused? Sites that answer cloud
+    servers with 403 / a challenge page only."""
+    if source.get("cloud") == "helper":
+        return True
+    if source.get("type") in HELPER_NEVER or source.get("key") in HELPER_NEVER or source.get("helper") is False:
+        return False
+    return "429" not in (message or "")
 
 
 def _helper_done(source):
@@ -263,7 +280,14 @@ def run_all(only=None, fast=False):
         if only:
             sources = [s for s in sources if s["key"] in only]
         totals = {"items": 0, "jobs": 0, "added": 0, "sent": 0, "ai_used": False}
+        if config.DATABASE_URL:
+            try:  # original links the Saudi helper found behind relay pages that refuse the cloud
+                totals["origin_from_helper"] = origin.apply_helper_results()
+            except Exception:
+                log.warning("helper origin links failed:\n%s", traceback.format_exc())
         sent_per_user = {}  # one alert budget per user for the whole run
+        # opening relay pages for their original links: at most this long per run (all sources together)
+        origin.RUN_BUDGET["until"] = time.time() + (ORIGIN_FAST_SECONDS if fast else ORIGIN_FULL_SECONDS)
         for src in sources:
             t0 = time.time()
             fn = COLLECTORS.get(src.get("type"))
@@ -274,21 +298,26 @@ def run_all(only=None, fast=False):
                 continue
             try:
                 items = fn(src) or []
-                if items and src.get("origin_from_article"):
-                    try:  # optional extra: a failure here must not drop the collected items
-                        origin.resolve(items, src)  # original apply links from the article pages
-                    except Exception:
-                        log.warning("origin links for %s failed:\n%s", src["key"], traceback.format_exc())
                 status, message = "ok", src.pop("_note", "")
             except base.Disallowed as e:
                 items, status, message = [], "disallowed", str(e)
             except base.Blocked as e:
                 items, status, message = [], "blocked", str(e)
+                if config.ON_CI and helper_can_fetch(src, message):
+                    # the site refuses cloud servers: the Saudi helper fetches it once a day from home
+                    items = from_helper(src)
+                    message = f"{message} · {src.pop('_note', '')}"
             except (base.FetchError, x_api.NotConfigured, linkedin.Disabled, apis.NotConfigured) as e:
                 items, status, message = [], ("skipped" if isinstance(e, (x_api.NotConfigured, linkedin.Disabled, apis.NotConfigured)) else "error"), str(e)
             except Exception as e:  # a broken collector must not stop the run
                 items, status, message = [], "error", repr(e)
                 log.error("collector %s crashed:\n%s", src["key"], traceback.format_exc())
+            if items:
+                try:  # optional extra: a failure here must not drop the collected items
+                    # relay pages (ads + "next" pages) -> the original apply link behind them
+                    origin.resolve(items, src)
+                except Exception:
+                    log.warning("origin links for %s failed:\n%s", src["key"], traceback.format_exc())
             _set_status(src["key"], name=src["name"], type=src["type"], status=status, message=message[:300],
                         fetched=len(items), last_run=storage.now_iso(), seconds=round(time.time() - t0, 1))
             log.info("source %s: %s (%d items) %s", src["key"], status, len(items), message)
@@ -301,6 +330,11 @@ def run_all(only=None, fast=False):
             elif src.get("_helper_consumed") is not None:
                 _helper_done(src)
 
+        if not fast and not only:
+            try:  # jobs stored before their original link was known
+                totals["origin_backfill"] = origin.backfill_stored()
+            except Exception:
+                log.warning("origin backfill failed:\n%s", traceback.format_exc())
         if not fast:
             try:  # older jobs the rules left as "أخرى" / without skills, newest first, within budget
                 totals["enriched"] = enrich.backfill(ENRICH_BACKFILL)
@@ -313,6 +347,8 @@ def run_all(only=None, fast=False):
             log.warning("backup failed: %s", e)
 
         summary = {"status": "done", "sources": len(sources), "items": totals["items"],
+                   "origin_from_helper": totals.get("origin_from_helper", 0),
+                   "origin_backfill": totals.get("origin_backfill", 0),
                    "jobs": totals["jobs"], "added": totals["added"], "notified_users": sum(1 for n in sent_per_user.values() if n),
                    "ai_used": totals["ai_used"], "enriched": totals.get("enriched", 0),
                    "seconds": round(time.time() - started, 1), "finished_at": storage.now_iso()}

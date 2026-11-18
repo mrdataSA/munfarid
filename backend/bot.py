@@ -60,22 +60,41 @@ DIGEST_MARGIN = timedelta(minutes=15)  # jobs stored just before the last digest
 MAX_TEXT = 3900                 # Telegram's limit is 4096 characters
 
 BTN_JOBS = "🔎 وظائفي"
-BTN_TITLES = "✏️ مسمياتي"
-BTN_CV = "📄 سيرتي"
+BTN_ALERTS = "🔔 تنبيهاتي"
+BTN_CV = "📄 السيرة الذاتية (قريباً)"
 BTN_SOURCES = "📚 المصادر"
-BTN_SETTINGS = "⚙️ التنبيهات"
 BTN_HELP = "❓ طريقة الاستخدام"
-MAIN_KB = {"keyboard": [[{"text": BTN_JOBS}, {"text": BTN_TITLES}],
-                        [{"text": BTN_CV}, {"text": BTN_SOURCES}],
-                        [{"text": BTN_SETTINGS}, {"text": BTN_HELP}]],
+# Buttons of the older keyboard (still on people's screens until the next message replaces it)
+BTN_TITLES = "✏️ مسمياتي"
+BTN_SETTINGS = "⚙️ التنبيهات"
+BTN_CV_OLD = "📄 سيرتي"
+MAIN_KB = {"keyboard": [[{"text": BTN_JOBS}, {"text": BTN_ALERTS}],
+                        [{"text": BTN_SOURCES}, {"text": BTN_HELP}],
+                        [{"text": BTN_CV}]],
            "resize_keyboard": True, "is_persistent": True}
-# Tap-to-try titles on the welcome message (Arabic and English work the same)
+# Tap-to-try titles in the first step (Arabic and English work the same)
 EXAMPLES = ["محاسب", "مهندس مدني", "ممرض", "Data Analyst"]
 SUGGEST_MAX = 4
 JADARAT = "جدارات"
+TELEGRAM_SOURCE = "قنوات تيليجرام"
+MAX_CITIES = 10
+UNSET_CITIES = (normalize.REMOTE, "", None, "غير محدد")   # always shown with the chosen cities
 
 MODES = {"daily": "مرة يومياً", "instant": "فور نزول الوظيفة", "off": "متوقفة"}
-CITIES = [c for c in normalize.CITY_ALIASES if c != normalize.REMOTE][:14]
+CITIES = [c for c in normalize.CITY_ALIASES if c != normalize.REMOTE][:18]
+# Guided setup: titles -> experience -> cities -> timing
+STEPS = ("titles", "exp", "cities", "mode")
+COMING_SOON_CV = ("📄 <b>قراءة السيرة الذاتية: قريباً</b> إن شاء الله.\n"
+                  "الآن اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>، "
+                  "ونجمع لك كل وظائفه.")
+# "احذف جدة" / "شيل محاسب" / "ضيف الدمام" / "add nurse": edits typed in the chat
+REMOVE_VERBS = ("احذف", "حذف", "احذفي", "شيل", "شيلي", "امسح", "الغ", "الغي", "ازل", "ازيل",
+                "remove", "delete", "drop")
+ADD_VERBS = ("اضف", "ضيف", "ضيفي", "اضيف", "زيد", "زود", "add")
+EDIT_NOUNS = {normalize.norm(w) for w in (
+    "مدينة", "مدينه", "المدينة", "مدن", "المدن", "مسمى", "المسمى", "مسميات", "المسميات", "وظيفة", "وظيفه",
+    "وظائف", "لي", "من", "عندي", "تنبيهاتي", "التنبيهات", "city", "cities", "title", "titles", "job", "jobs",
+    "the", "my", "from", "please")}
 
 # Words people add around a title: "ابغى وظيفة محاسب" -> "محاسب"
 FILLER = {normalize.norm(w) for w in (
@@ -181,9 +200,26 @@ def get_sub(chat_id):
 
 def _new_sub(chat_id, kind):
     now = storage.now_iso()
-    return {"chat_id": chat_id, "kind": kind, "created_at": now, "updated_at": now, "titles": [],
-            "sources": [], "city": "", "mode": "daily" if kind == "user" else "feed", "since": now,
-            "last_digest": "", "sent": [], "cv": None, "awaiting": ""}
+    s = {"chat_id": chat_id, "kind": kind, "created_at": now, "updated_at": now, "titles": [],
+         "sources": [], "mode": "daily" if kind == "user" else "feed", "since": now,
+         "last_digest": "", "sent": [], "cv": None, "awaiting": ""}
+    if kind == "user":
+        s.update(cities=[], exp="", setup="")
+    else:
+        s["city"] = ""
+    return s
+
+
+def cities_of(sub):
+    """The person's cities (newer "cities" list, or the older single "city")."""
+    if isinstance(sub.get("cities"), list):
+        return [c for c in sub["cities"] if c]
+    return [sub["city"]] if sub.get("city") else []
+
+
+def _set_cities(s, cities):
+    s["cities"] = list(dict.fromkeys(c for c in cities if c))[:MAX_CITIES]
+    s.pop("city", None)
 
 
 @contextlib.contextmanager
@@ -262,8 +298,27 @@ def migrate_chat(old_id, new_id):
 # ---------------------------------------------------------------- search
 
 def _jobs():
+    """Jobs the bot may show: no scam risk, and (BOT_ORIGIN_ONLY) only with an original link: a job
+    whose only link is a relay page (ads, "next" pages) waits until collectors.origin resolves it."""
     jobs, _ = catalog.all_jobs(include_demo=False)
-    return [j for j in jobs if not j.get("scam_risk") and not j.get("is_demo")]
+    return [j for j in jobs if not j.get("scam_risk") and not j.get("is_demo")
+            and (not config.BOT_ORIGIN_ONLY or normalize.original_link(j))]
+
+
+_exp_cache = {}
+
+
+def _job_exp(job):
+    """Years of experience a job asks for (stored by the collector, else read once from its text)."""
+    if "exp_years" in job:
+        return job["exp_years"]
+    key = (job.get("id"), job.get("title"))
+    if key not in _exp_cache:
+        if len(_exp_cache) > 30000:
+            _exp_cache.clear()
+        _exp_cache[key] = normalize.detect_experience(job.get("title") or "",
+                                                      job.get("raw_text") or job.get("description") or "")
+    return _exp_cache[key]
 
 
 def _query_of(sub):
@@ -279,12 +334,15 @@ def search(sub, jobs=None, all_if_no_titles=False):
     if not query and not all_if_no_titles:
         return []
     srcs = set(sub.get("sources") or [])
-    city = sub.get("city") or ""
+    cities = set(cities_of(sub))
+    exp = sub.get("exp") or ""
     out = []
     for j in (jobs if jobs is not None else _jobs()):
         if srcs and j.get("source") not in srcs and not (j.get("via_jadarat") and JADARAT in srcs):
             continue
-        if city and j.get("city") not in (city, normalize.REMOTE, "", None):
+        if cities and j.get("city") not in cities and j.get("city") not in UNSET_CITIES:
+            continue
+        if exp and not normalize.experience_fits(exp, _job_exp(j)):
             continue
         m = titles.match(j, query) if query else 1
         if m:
@@ -341,10 +399,11 @@ def split_query(text):
 # ---------------------------------------------------------------- messages
 
 def card(job):
-    """Title, company / city / age, then the direct link: the original apply page when the
-    re-posting site gave one, else the ad itself in its source."""
-    apply = job.get("apply_url") or ""
-    url = apply or job.get("url") or ""
+    """Title, company / city / age, then the direct link: the original apply page found behind the
+    re-posting site (its ads and "next" pages skipped), else the ad itself in its own source."""
+    url = normalize.original_link(job) if config.BOT_ORIGIN_ONLY else (job.get("apply_url") or job.get("url") or "")
+    url = url or job.get("apply_url") or job.get("url") or ""
+    apply = url != (job.get("url") or "") or job.get("source") == TELEGRAM_SOURCE
     meta = [x for x in (job.get("company"), job.get("city"), _ago(job.get("posted_date"))) if x]
     lines = [f"<b>{esc(job.get('title'))}</b>"]
     if meta:
@@ -352,10 +411,11 @@ def card(job):
     src = job.get("source") or ""
     if url.startswith(("https://", "http://")):
         href = html.escape(url, quote=True)
+        host = esc(normalize.url_host(url))
         if job.get("via_jadarat") and apply:
             lines.append(f'🔗 <a href="{href}">رابط التقديم في جدارات</a> · نقلاً عن {esc(src)}')
         elif apply:
-            lines.append(f'🔗 <a href="{href}">رابط التقديم</a> · نقلاً عن {esc(src)}')
+            lines.append(f'🔗 <a href="{href}">رابط التقديم</a> ({host}) · نقلاً عن {esc(src)}')
         else:
             lines.append(f'🔗 <a href="{href}">الإعلان الأصلي في {esc(src)}</a>')
     elif url.startswith("mailto:"):  # direct posts: Telegram links don't support mailto
@@ -386,18 +446,20 @@ def _join_cards(parts):
 
 HELP = (
     "أهلاً بك في مُنْفَرِد 👋\n"
-    "نجمع لك أخبار الوظائف في السعودية من كل المصادر، مجاناً، وكل وظيفة معها رابطها الأصلي لتقدّم منه مباشرة.\n\n"
-    "<b>كيف يعمل؟</b>\n"
-    "1️⃣ <b>ابحث:</b> اكتب المسمى الوظيفي بالعربي أو الإنجليزي، مثل: محاسب، مهندس مدني، Data Analyst\n"
-    "أو اكتب طلبك بجملة، مثل: «أريد وظيفة محاسب في جدة»\n"
-    "2️⃣ <b>النتائج فوراً:</b> نعرض لك كل الوظائف الحالية، الأحدث أولاً، ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة.\n"
-    f"3️⃣ <b>الاشتراك تلقائي ومجاني:</b> أي وظيفة جديدة تناسب مسمياتك تصلك هنا، مرة يومياً في الساعة "
-    f"{config.BOT_DIGEST_HOUR} صباحاً، أو فور نزولها (تختار من {BTN_SETTINGS}).\n"
-    "4️⃣ <b>قدّم من المصدر:</b> اضغط على الرابط تحت الوظيفة لتفتح إعلانها الأصلي وتقدّم هناك. "
-    "مُنْفَرِد ينقل الخبر فقط، ولا يستقبل طلبات التوظيف.\n"
-    "💡 <b>اقتراحات:</b> بعد كل بحث نقترح عليك مسميات قريبة فيها وظائف الآن، تضيفها بضغطة.\n\n"
-    "📄 أو أرسل سيرتك الذاتية (PDF أو Word) ونستخرج منها المسميات التي تناسب خبرتك.\n\n"
-    f"{BTN_JOBS} وظائفك الحالية، {BTN_TITLES} إضافة مسمى أو حذفه، {BTN_SETTINGS} التوقيت والمدينة.\n"
+    "نجمع لك أخبار الوظائف في السعودية من كل المصادر، مجاناً. ونحن من يدخل صفحات المواقع الناقلة "
+    "بإعلاناتها وأزرار «التالي»، ونعطيك رابط التقديم الأصلي من صاحب الوظيفة مباشرة.\n\n"
+    "<b>كيف يعمل؟ 4 خطوات فقط:</b>\n"
+    "1️⃣ <b>المسمى الوظيفي:</b> اكتب مسمى أو أكثر بالعربي أو الإنجليزي، مثل: محاسب، مهندس مدني، Data Analyst\n"
+    "2️⃣ <b>الخبرة:</b> اختر سنوات خبرتك\n"
+    "3️⃣ <b>المدن:</b> اختر مدينة أو أكثر (والوظائف عن بعد تصلك معها)\n"
+    f"4️⃣ <b>التوقيت:</b> كل وظيفة جديدة تصلك فور نزولها، أو مرة يومياً الساعة {config.BOT_DIGEST_HOUR} صباحاً\n"
+    "بعدها نعرض لك كل الوظائف الحالية، الأحدث أولاً، ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة.\n\n"
+    "🔗 <b>قدّم من المصدر:</b> الرابط تحت كل وظيفة يفتح إعلانها الأصلي مباشرة. "
+    "مُنْفَرِد ينقل الخبر فقط، ولا يستقبل طلبات التوظيف.\n\n"
+    "✍️ <b>اكتب لي بأسلوبك وأفهمك:</b> «أبغى وظيفة محاسب في جدة»، «ضيف الدمام»، «احذف مهندس مدني»، "
+    "«خبرتي سنتين»، «أرسلها لي أول بأول».\n"
+    f"{BTN_ALERTS}: إضافة أو حذف المسميات والمدن، والخبرة والتوقيت، في أي وقت.\n"
+    "📄 قراءة السيرة الذاتية: قريباً.\n"
     "/stop إيقاف التنبيهات، /delete حذف كل بياناتك.\n\n"
     "English works too: type a job title such as <b>accountant</b> or <b>nurse in Jeddah</b>.")
 
@@ -406,7 +468,7 @@ CV_PROMPT = (
     "🔒 لا نحتاج اسمك ولا جوالك ولا هويتك ولا عنوانك. ونحذف أي بيانات شخصية تلقائياً قبل القراءة، "
     "ولا نحفظ الملف ولا النص، بل نحفظ فقط المسميات والمهارات المستخرجة منه.")
 
-START_HINT = "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>\nأو أرسل سيرتك الذاتية."
+START_HINT = "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>"
 NOT_A_JOB = ("أنا مُنْفَرِد، أبحث لك عن الوظائف 🙂\n"
              "اكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b> أو <b>Data Analyst</b>، "
              f"أو اضغط {BTN_HELP} لتعرف كيف أعمل.")
@@ -474,14 +536,30 @@ def send_page(chat_id, header="", sid=None, by_id=None, max_wait=3):
     tg.send(chat_id, text, reply_markup=markup, max_wait=max_wait)
 
 
+def _cities_text(cities):
+    if not cities:
+        return "كل المدن"
+    if cities == [normalize.REMOTE]:
+        return "عن بعد فقط"
+    named = [c for c in cities if c != normalize.REMOTE]
+    return "، ".join(named) + " (ومعها الوظائف عن بعد)"
+
+
+def _exp_text(exp):
+    return normalize.EXPERIENCE[exp][0] if exp in normalize.EXPERIENCE else "أي خبرة"
+
+
 def _scope_text(sub):
     srcs = sub.get("sources") or []
     bits = ["من كل المصادر" if not srcs else f"من {_ar_sources(len(srcs))} اخترتها" if len(srcs) > 2
             else "من " + " و".join(srcs)]
-    if sub.get("city") == normalize.REMOTE:
+    cities = cities_of(sub)
+    if cities == [normalize.REMOTE]:
         bits.append("عن بعد")
-    elif sub.get("city"):
-        bits.append("في " + sub["city"] + " وعن بعد")
+    elif cities:
+        bits.append("في " + "، ".join(c for c in cities if c != normalize.REMOTE) + " وعن بعد")
+    if sub.get("exp") in normalize.EXPERIENCE:
+        bits.append("خبرة: " + _exp_text(sub["exp"]))
     return "، ".join(bits)
 
 
@@ -561,16 +639,20 @@ def _send_suggestions(chat_id, sugg):
             reply_markup={"inline_keyboard": kb})
 
 
-def _sub_note(sub):
-    mode = sub.get("mode")
+def _when_text(mode):
     if mode == "instant":
-        when = "فور نزولها"
-    elif mode == "daily":
-        when = f"مرة يومياً في الساعة {config.BOT_DIGEST_HOUR} صباحاً"
-    else:
-        return f"🔕 التنبيهات متوقفة الآن. فعّلها من {BTN_SETTINGS} لتصلك الوظائف الجديدة."
-    return (f"🔔 <b>تم اشتراكك مجاناً:</b> كل وظيفة جديدة تناسب مسمياتك تصلك هنا {when}، مع رابطها الأصلي.\n"
-            f"لتغيير التوقيت أو المدينة: {BTN_SETTINGS}")
+        return "فور نزولها"
+    if mode == "daily":
+        return f"مرة يومياً في الساعة {config.BOT_DIGEST_HOUR} صباحاً"
+    return ""
+
+
+def _sub_note(sub):
+    when = _when_text(sub.get("mode"))
+    if not when:
+        return f"🔕 التنبيهات متوقفة الآن. فعّلها من {BTN_ALERTS} لتصلك الوظائف الجديدة."
+    return (f"🔔 <b>تم اشتراكك مجاناً:</b> كل وظيفة جديدة تناسبك تصلك هنا {when}، مع رابطها الأصلي.\n"
+            f"لإضافة أو حذف المسميات والمدن، أو تغيير الخبرة والتوقيت: {BTN_ALERTS}")
 
 
 def show_jobs(chat_id, suggest=False):
@@ -591,10 +673,10 @@ def show_jobs(chat_id, suggest=False):
     names = "، ".join(t["title"] for t in sub["titles"])
     if not found:
         later = ("وسنرسل لك أي وظيفة مناسبة فور نزولها." if sub.get("mode") in ("daily", "instant")
-                 else f"فعّل التنبيهات من {BTN_SETTINGS} لتصلك أي وظيفة مناسبة فور نزولها.")
+                 else f"فعّل التنبيهات من {BTN_ALERTS} لتصلك أي وظيفة مناسبة فور نزولها.")
         tg.send(chat_id, f"لا توجد الآن وظائف لـ: {esc(names)} ({esc(_scope_text(sub))}).\n"
                 f"نجمع الوظائف من كل المصادر على مدار الساعة، {later}\n"
-                "يمكنك إضافة مسميات أخرى بنفس المعنى، أو إرسال سيرتك لنقترح عليك وظائف.", reply_markup=MAIN_KB)
+                f"يمكنك إضافة مسميات أو مدن أخرى من {BTN_ALERTS}.", reply_markup=MAIN_KB)
         _send_suggestions(chat_id, suggestions(sub, found, jobs))
         return
     header = f"🔎 وجدنا {_ar_jobs(len(found))} لـ: <b>{esc(names)}</b>\n{esc(_scope_text(sub))}، الأحدث أولاً."
@@ -603,19 +685,26 @@ def show_jobs(chat_id, suggest=False):
     when = MODES.get(sub.get("mode"), "")
     footer = ("هذه كل الوظائف الحالية ✅\n" + (
         f"الجديد يصلك {when}." if sub.get("mode") in ("daily", "instant")
-        else f"التنبيهات متوقفة. فعّلها من {BTN_SETTINGS}."))
+        else f"التنبيهات متوقفة. فعّلها من {BTN_ALERTS}."))
     sid = _session_set(chat_id, [j["id"] for j in found], footer)
     send_page(chat_id, header, sid=sid, by_id={j["id"]: j for j in found})
     if suggest:
         _send_suggestions(chat_id, suggestions(sub, found, jobs))
 
 
-def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False):
-    """Add the titles in a message (or `wanted` / `city` read by the AI) and show the jobs.
+def _add_cities(s, cities):
+    cur = cities_of(s)
+    _set_cities(s, cur + [c for c in cities if c and c not in cur])
+
+
+def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False, cities=None):
+    """Add the titles (and cities) in a message, or `wanted` / `cities` read by the AI, then show the
+    jobs; during the guided setup, the next step instead.
     ai_charged: this message already paid one AI use (reading it): the expansion is free."""
     if wanted is None:
         wanted, city = split_query(text)
-    if not wanted and not city:
+    cities = [c for c in list(cities or []) + [city] if c]
+    if not wanted and not cities:
         tg.send(chat_id, "اكتب المسمى الوظيفي، مثل: <b>محاسب</b> أو <b>مهندس مدني</b>", reply_markup=MAIN_KB)
         return
     sub = get_sub(chat_id) or {}
@@ -624,7 +713,7 @@ def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False):
     new = [t for t in wanted if normalize.norm(t) not in have]
     room = MAX_TITLES - len(sub.get("titles") or [])
     if new and room <= 0:
-        tg.send(chat_id, f"وصلت إلى الحد الأقصى ({MAX_TITLES} مسمى). احذف بعضها من {BTN_TITLES} ثم أضف الجديد.",
+        tg.send(chat_id, f"وصلت إلى الحد الأقصى ({MAX_TITLES} مسمى). احذف بعضها من {BTN_ALERTS} ثم أضف الجديد.",
                 reply_markup=MAIN_KB)
         return
     skipped = new[room:]
@@ -639,22 +728,33 @@ def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False):
         for t in new:
             if normalize.norm(t) not in have and len(s["titles"]) < MAX_TITLES:
                 s["titles"].append({"title": t, "variants": expanded.get(t, [t]), "from": "user"})
-        if city:
-            s["city"] = city
+        if cities:
+            _add_cities(s, cities)
         if s.get("awaiting"):
             s["awaiting"] = ""
+        if first and s["titles"] and not s.get("setup_done") and not s.get("setup"):
+            s["setup"] = "titles"   # a new person: the guided steps, even without /start
+        setup = s.get("setup") or ""
+        now_titles = [t["title"] for t in s["titles"]]
+        now_cities = cities_of(s)
     msg = []
     if new:
         msg.append("✅ أضفت: " + esc("، ".join(new)))
         extra = [v for t in new for v in expanded.get(t, [])[1:]]
         if extra:
             msg.append("ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة: " + esc("، ".join(extra[:14])))
+    elif wanted:
+        msg.append("هذا المسمى موجود عندك: " + esc("، ".join(wanted)))
     if skipped:
         msg.append(f"لم أضف {len(skipped)} لأن الحد الأقصى {MAX_TITLES} مسمى: " + esc("، ".join(skipped[:10])))
-    if city == normalize.REMOTE:
-        msg.append(f"🏠 نعرض لك الوظائف عن بعد. يمكنك تغيير ذلك من {BTN_SETTINGS}.")
-    elif city:
-        msg.append(f"📍 المدينة: {esc(city)} (مع الوظائف عن بعد). يمكنك تغييرها من {BTN_SETTINGS}.")
+    if cities:
+        msg.append(f"📍 المدن: {esc(_cities_text(now_cities))}")
+    if setup in STEPS:
+        if now_titles:
+            msg.append("\n💼 <b>مسمياتك:</b> " + esc("، ".join(now_titles)))
+        if msg:
+            tg.send(chat_id, "\n".join(msg))
+        return wizard(chat_id, "titles_more" if setup == "titles" else setup)
     if first and new:
         msg.append("\n" + _sub_note(get_sub(chat_id) or {}))
     if msg:
@@ -662,35 +762,328 @@ def add_titles(chat_id, text="", wanted=None, city=None, ai_charged=False):
     show_jobs(chat_id, suggest=bool(new))
 
 
+# ---------------------------------------------------------------- guided setup + alerts panel
+
+def _step_head(step):
+    n = STEPS.index(step) + 1
+    names = {"titles": "المسمى الوظيفي", "exp": "الخبرة", "cities": "المدن", "mode": "التوقيت"}
+    return f"<b>الخطوة {n} من {len(STEPS)}: {names[step]}</b>\n"
+
+
+def _next_btn(step, label):
+    return [{"text": f"التالي: {label} ⬅️", "callback_data": "wiz:" + step}]
+
+
+def titles_step(chat_id, more=False):
+    sub = get_sub(chat_id) or {}
+    names = [t["title"] for t in sub.get("titles") or []]
+    if more and names:
+        text = ("تقدر تضيف مسمى آخر الآن بكتابته (أو عدة مسميات بينها فاصلة)، "
+                "أو اضغط «التالي» لتختار خبرتك.")
+        return text, {"inline_keyboard": [_next_btn("exp", "الخبرة")]}
+    text = (_step_head("titles") + "اكتب المسمى الوظيفي الذي تبحث عنه، بالعربي أو الإنجليزي.\n"
+            "تقدر تكتب أكثر من مسمى بينها فاصلة، مثل: <b>محاسب، مدقق حسابات</b>\n"
+            "أو اضغط على مثال:")
+    kb = _examples_kb()["inline_keyboard"]
+    if names:
+        text += "\n\n💼 مسمياتك: " + esc("، ".join(names))
+        kb = kb + [_next_btn("exp", "الخبرة")]
+    return text, {"inline_keyboard": kb}
+
+
+def exp_menu(chat_id, wizard_on=False):
+    cur = (get_sub(chat_id) or {}).get("exp") or ""
+    text = ((_step_head("exp") if wizard_on else "") + "🎓 كم سنة خبرتك؟\n"
+            "نعرض لك الوظائف المناسبة لخبرتك، والوظائف التي لا تذكر الخبرة تظهر لك دائماً.")
+    kb = [[{"text": ("✅ " if cur == k else "") + label, "callback_data": "exp:" + k}]
+          for k, (label, _, _) in normalize.EXPERIENCE.items()]
+    kb.append([{"text": ("✅ " if not cur else "") + "أي خبرة (أظهر الكل)", "callback_data": "exp:any"}])
+    if not wizard_on:
+        kb.append([{"text": "رجوع", "callback_data": "alerts"}])
+    return text, {"inline_keyboard": kb}
+
+
+def cities_menu(chat_id, wizard_on=False):
+    cur = cities_of(get_sub(chat_id) or {})
+    text = ((_step_head("cities") if wizard_on else "") +
+            "📍 اختر مدينة أو أكثر، واضغط عليها مرة ثانية لإلغائها (أو اكتب اسم المدينة).\n"
+            "تصلك معها الوظائف عن بعد والوظائف غير محددة المدينة.\n\n"
+            f"<b>المختار الآن:</b> {esc(_cities_text(cur))}")
+    kb = [[{"text": ("✅ " if not cur else "") + "كل المدن", "callback_data": "cty:all"},
+           {"text": ("✅ " if normalize.REMOTE in cur else "") + "🏠 عن بعد", "callback_data": "cty:remote"}]]
+    row = []
+    for i, c in enumerate(CITIES):
+        row.append({"text": ("✅ " if c in cur else "") + c, "callback_data": f"cty:{i}"})
+        if len(row) == 3:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append(_next_btn("mode", "التوقيت") if wizard_on else [{"text": "رجوع", "callback_data": "alerts"}])
+    return text, {"inline_keyboard": kb}
+
+
+def mode_step(chat_id):
+    text = _step_head("mode") + "⏰ متى تصلك الوظائف الجديدة التي تناسبك؟"
+    kb = [[{"text": "⚡ فور نزولها", "callback_data": "mode:instant"}],
+          [{"text": f"📅 مرة يومياً الساعة {config.BOT_DIGEST_HOUR} صباحاً", "callback_data": "mode:daily"}]]
+    return text, {"inline_keyboard": kb}
+
+
+def wizard(chat_id, step, mid=None):
+    """Show one step of the guided setup (titles -> experience -> cities -> timing)."""
+    more = step == "titles_more"
+    step = "titles" if more else step
+    if step not in STEPS:
+        return None
+    sub = get_sub(chat_id) or {}
+    if step != "titles" and not sub.get("titles"):
+        step, more = "titles", False   # no title yet: always back to the first step
+    with _edit_sub(chat_id) as s:
+        s["setup"] = step
+    if step == "titles":
+        return _show(chat_id, mid, titles_step(chat_id, more))
+    if step == "exp":
+        return _show(chat_id, mid, exp_menu(chat_id, wizard_on=True))
+    if step == "cities":
+        return _show(chat_id, mid, cities_menu(chat_id, wizard_on=True))
+    return _show(chat_id, mid, mode_step(chat_id))
+
+
+def _summary(sub):
+    names = "، ".join(t["title"] for t in sub.get("titles") or []) or "لم تضف بعد"
+    srcs = sub.get("sources") or []
+    when = _when_text(sub.get("mode"))
+    return (f"💼 <b>المسميات:</b> {esc(names)}\n"
+            f"🎓 <b>الخبرة:</b> {esc(_exp_text(sub.get('exp')))}\n"
+            f"📍 <b>المدن:</b> {esc(_cities_text(cities_of(sub)))}\n"
+            f"⏰ <b>التوقيت:</b> {esc(when or 'متوقفة')}\n"
+            f"📚 <b>المصادر:</b> {'كل المصادر' if not srcs else esc(_ar_sources(len(srcs)) + ' اخترتها')}")
+
+
+def finish_setup(chat_id, mid=None):
+    with _edit_sub(chat_id) as s:
+        s["setup"], s["setup_done"] = "", True
+        sub = dict(s)
+    _show(chat_id, mid, ("✅ <b>تم! تنبيهاتك جاهزة</b>\n\n" + _summary(sub), None))
+    tg.send(chat_id, _sub_note(sub), reply_markup=MAIN_KB)
+    show_jobs(chat_id, suggest=True)
+
+
+def alerts_menu(chat_id):
+    sub = get_sub(chat_id) or {}
+    mode = sub.get("mode", "daily")
+    text = ("<b>🔔 تنبيهاتك</b>\n\n" + _summary(sub) + "\n\n"
+            "✍️ أو اكتب لي مباشرة، مثل: «ضيف الدمام» أو «احذف محاسب» أو «أضف مصمم جرافيك» أو «خبرتي سنتين».")
+
+    def b(label, m):
+        return {"text": ("✅ " if mode == m else "") + label, "callback_data": "mode:" + m}
+    kb = [[{"text": "💼 المسميات: إضافة / حذف", "callback_data": "titles"}],
+          [{"text": "📍 المدن: إضافة / حذف", "callback_data": "cty:menu"}],
+          [{"text": "🎓 الخبرة", "callback_data": "exp:menu"}],
+          [b("⚡ فوراً", "instant"), b("📅 يومياً", "daily"), b("⏸️ إيقاف", "off")],
+          [{"text": "📚 المصادر", "callback_data": "src:menu"}],
+          [{"text": "🧭 الإعداد خطوة بخطوة", "callback_data": "wiz:titles"}],
+          [{"text": "🗑️ حذف كل بياناتي", "callback_data": "wipe:ask"}]]
+    return text, {"inline_keyboard": kb}
+
+
+# ---------------------------------------------------------------- edits typed in the chat
+
+# Words that make a short message an edit of the alerts, not a job title (sent to the AI to read)
+EDIT_HINT_RE = re.compile(r"(?:^|\s)(?:خبرتي|خبره|الخبره|بخبره|سنه|سنوات|سنتين|حديث|تخرج|experience|years?|"
+                          r"graduate|فورا|فوري|اول باول|يوميا|يومي|daily|instant|وقف|اوقف|ايقاف|stop|احذف|حذف|شيل|"
+                          r"امسح|الغ|الغي|ازل|remove|delete|اضف|ضيف|زيد|add)(?=\s|$)", re.I)
+# Timing words: without the AI such a message is never saved as a job title
+MODE_HINT_RE = re.compile(r"(?:^|\s)(?:فورا|فوري|اول باول|يوميا|daily|instant|اوقف|ايقاف|stop)(?=\s|$)", re.I)
+REMOVE_N = {normalize.norm(w) for w in REMOVE_VERBS}
+ADD_N = {normalize.norm(w) for w in ADD_VERBS}
+
+
+def parse_edit(text):
+    """Local reading of "احذف جدة ومحاسب" / "ضيف الدمام" / "add nurse":
+    ("add" | "remove", titles, cities) or None (not an edit, or nothing understood)."""
+    words = (text or "").split()
+    if not words:
+        return None
+    first = normalize.norm(words[0]).strip("،,:.!")
+    op = "remove" if first in REMOVE_N else "add" if first in ADD_N else None
+    if not op:
+        return None
+    rest = " ".join(words[1:])
+    cities = normalize.detect_cities(rest)
+    if REMOTE_RE.search(normalize.norm(rest)):
+        cities.append(normalize.REMOTE)
+        rest = REMOTE_RE.sub(" ", normalize.norm(rest))
+    city_words = _city_words()
+    found = []
+    for part in re.split(r"[\n,،;؛/|]+|\s+(?:and|or|او|أو)\s+", rest):
+        keep = []
+        for w in part.split():
+            nw = normalize.norm(w)
+            bare = nw[1:] if nw.startswith("و") and len(nw) > 3 else nw
+            if nw in FILLER or nw in EDIT_NOUNS or bare in EDIT_NOUNS:
+                continue
+            wt = titles.tokens(bare)
+            if wt and all(t in city_words for t in wt):
+                continue
+            keep.append(bare if not keep and bare != nw else w)
+        t = titles.clean_title(" ".join(keep))
+        if len(t) >= 2 and t not in found:
+            found.append(t)
+    if not found and not cities:
+        return None
+    return op, found, cities
+
+
+def _find_title(have, wanted):
+    """The saved title meant by `wanted` (same words, or the one saved title holding its words)."""
+    wt = set(titles.tokens(wanted))
+    if not wt:
+        return None
+    same = [t for t in have if set(titles.tokens(t["title"])) == wt
+            or normalize.norm(t["title"]) == normalize.norm(wanted)]
+    if same:
+        return same[0]
+    near = [t for t in have if wt <= set(titles.tokens(t["title"]))
+            or any(wt == set(titles.tokens(v)) for v in (t.get("variants") or [])[:12])]
+    return near[0] if len(near) == 1 else None
+
+
+def remove_items(chat_id, rm_titles=(), rm_cities=()):
+    """Remove titles / cities; returns (removed titles, removed cities, not found)."""
+    gone_t, gone_c, missing = [], [], []
+    with _edit_sub(chat_id) as s:
+        for w in rm_titles:
+            t = _find_title(s["titles"], w)
+            if t:
+                s["titles"].remove(t)
+                gone_t.append(t["title"])
+            else:
+                missing.append(w)
+        cur = cities_of(s)
+        for c in rm_cities:
+            if c in cur:
+                cur.remove(c)
+                gone_c.append(c)
+            else:
+                missing.append(c)
+        if gone_c:
+            _set_cities(s, cur)
+    return gone_t, gone_c, missing
+
+
+def _local_exp(text, asked=False):
+    """'خبرتي سنتين' / 'حديث تخرج' -> an EXPERIENCE key without the AI ('' when not said).
+    asked: the experience step is on screen, so a bare "سنتين" / "3 سنوات" is the answer."""
+    t = normalize.norm(text)
+    if not asked and not re.search(r"خبر|experience|تخرج|graduate", t):
+        return ""
+    years = normalize.detect_experience("", "خبرة " + t)
+    if years is None:
+        return ""
+    return "entry" if years <= 1 else "junior" if years <= 3 else "mid" if years <= 7 else "senior"
+
+
+def apply_request(chat_id, req, ai_charged=False):
+    """Apply what a message asked for: removals, experience, timing, then added titles / cities."""
+    lines = []
+    if req.get("remove_titles") or req.get("remove_cities"):
+        gone_t, gone_c, missing = remove_items(chat_id, req.get("remove_titles") or [], req.get("remove_cities") or [])
+        if gone_t or gone_c:
+            lines.append("🗑️ حذفت: " + esc("، ".join(gone_t + gone_c)))
+        if missing:
+            lines.append("لم أجد عندك: " + esc("، ".join(missing)))
+    exp = req.get("experience") or ""
+    mode = req.get("mode") or ""
+    if exp or mode:
+        with _edit_sub(chat_id) as s:
+            if exp:
+                s["exp"] = "" if exp == "any" else exp
+            if mode:
+                _set_mode(s, mode)
+        if exp:
+            lines.append("🎓 الخبرة: " + esc(_exp_text("" if exp == "any" else exp)))
+        if mode:
+            lines.append("⏰ التنبيهات: " + esc(_when_text(mode) or "متوقفة"))
+    cities = [c for c in req.get("cities") or [] if c]
+    if req.get("remote") and normalize.REMOTE not in cities:
+        cities.append(normalize.REMOTE)
+    if req.get("titles"):
+        if lines:
+            tg.send(chat_id, "\n".join(lines))
+        return add_titles(chat_id, wanted=req["titles"], cities=cities, ai_charged=ai_charged)
+    if cities:
+        with _edit_sub(chat_id) as s:
+            _add_cities(s, cities)
+        lines.append("📍 المدن الآن: " + esc(_cities_text(cities_of(get_sub(chat_id) or {}))))
+    if not lines:
+        return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
+    setup = (get_sub(chat_id) or {}).get("setup") or ""
+    if setup in STEPS:   # during the guided setup: confirm, then the same step (or the next one)
+        tg.send(chat_id, "\n".join(lines))
+        if setup == "exp" and exp:
+            return wizard(chat_id, "cities")
+        if setup == "mode" and mode:
+            return finish_setup(chat_id)
+        return wizard(chat_id, "titles_more" if setup == "titles" else setup)
+    lines.append(f"\nلعرض الوظائف: {BTN_JOBS}، ولكل الإعدادات: {BTN_ALERTS}")
+    tg.send(chat_id, "\n".join(lines), reply_markup=MAIN_KB)
+
+
 def _needs_reading(text, wanted):
-    """Plain title lists are read locally; sentences, questions and odd results go to the AI."""
+    """Plain title lists are read locally; sentences, questions, edits and odd results go to the AI."""
     if "?" in text or "؟" in text or not wanted:
+        return True
+    if EDIT_HINT_RE.search(normalize.norm(text)):
         return True
     return len(text.split()) >= 6 or any(len(titles.tokens(t)) >= 4 for t in wanted)
 
 
 def handle_text(chat_id, text):
-    """A free-text message: job titles (Arabic, English or both), a sentence asking for jobs,
-    a greeting, or a question."""
+    """A free-text message: job titles (Arabic, English or both), a sentence asking for jobs, an
+    edit of the saved alerts ("احذف جدة", "ضيف محاسب", "خبرتي سنتين"), a greeting, or a question."""
     if GREETING_RE.match(normalize.norm(text)):
         sub = get_sub(chat_id) or {}
         return tg.send(chat_id, "أهلاً بك 👋\n" + START_HINT,
                        reply_markup=MAIN_KB if sub.get("titles") else _examples_kb())
+    edit = parse_edit(text)
+    if edit:
+        op, ts, cs = edit
+        if op == "remove":
+            return apply_request(chat_id, {"remove_titles": ts, "remove_cities": cs})
+        return apply_request(chat_id, {"titles": ts, "cities": cs})
     wanted, city = split_query(text)
+    if not wanted and city and not EDIT_HINT_RE.search(normalize.norm(text)):
+        return apply_request(chat_id, {"cities": [city]})   # only a city ("الرياض", "عن بعد"): add it
     if _needs_reading(text, wanted):
         req, charged = titles.cached_request(text), False
         if req is None and ai.enabled() and _ai_allowed(chat_id):
             tg.quiet("sendChatAction", chat_id=chat_id, action="typing")
             req, charged = titles.parse_request(text), True
         if req is not None:
-            if req["intent"] == "help" and not req["titles"]:
+            if req["intent"] == "help" and not req.get("titles"):
                 return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
-            if not req["titles"]:
+            cities = [c for c in (normalize.detect_city(c) for c in
+                                  (req.get("cities") or ([req["city"]] if req.get("city") else []))) if c]
+            if req.get("intent") == "edit" or req.get("remove_titles") or req.get("remove_cities") \
+                    or req.get("experience") or req.get("mode"):
+                # the AI read the whole message: its cities only ("شيل الرياض" names a city to remove)
+                return apply_request(chat_id, dict(req, cities=cities), ai_charged=charged)
+            cities = cities or ([city] if city else [])
+            if not req.get("titles"):
+                if cities or req.get("remote"):
+                    return apply_request(chat_id, dict(req, cities=cities))
                 return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
-            ai_city = normalize.REMOTE if req.get("remote") else normalize.detect_city(req.get("city") or "")
-            return add_titles(chat_id, wanted=req["titles"], city=ai_city or city, ai_charged=charged)
-        # no AI now: a question or a long sentence must not become a saved "job title"
-        if "?" in text or "؟" in text or any(len(titles.tokens(t)) >= 4 for t in wanted):
+            if req.get("remote"):
+                cities.append(normalize.REMOTE)
+            return add_titles(chat_id, wanted=req["titles"], cities=cities, ai_charged=charged)
+        # no AI now: experience said in words; a question, an edit or a long sentence is not a "job title"
+        exp = _local_exp(text, asked=(get_sub(chat_id) or {}).get("setup") == "exp")
+        if exp:
+            return apply_request(chat_id, {"experience": exp})
+        if "?" in text or "؟" in text or any(len(titles.tokens(t)) >= 4 for t in wanted) \
+                or MODE_HINT_RE.search(normalize.norm(text)):
             return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
     if not wanted and not city:
         return tg.send(chat_id, NOT_A_JOB, reply_markup=MAIN_KB)
@@ -700,15 +1093,19 @@ def handle_text(chat_id, text):
 def titles_menu(chat_id):
     sub = get_sub(chat_id) or {}
     ts = sub.get("titles") or []
+    kb = []
     if not ts:
-        return ("لم تضف أي مسمى بعد.\nاكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b>", None)
-    lines = ["<b>مسمياتك الوظيفية:</b>"]
-    for t in ts:
-        lines.append("• " + esc(t["title"]) + (" (من سيرتك)" if t.get("from") == "cv" else ""))
-    lines.append("\nلإضافة مسمى اكتبه هنا. ولحذف مسمى اضغط عليه:")
-    kb = [[{"text": "❌ " + t["title"][:40], "callback_data": "del:" + _h(t["title"])}] for t in ts]
-    kb.append([{"text": "🗑️ حذف كل المسميات", "callback_data": "del:all"}])
-    return "\n".join(lines), {"inline_keyboard": kb}
+        text = "لم تضف أي مسمى بعد.\nاكتب المسمى الوظيفي الذي تبحث عنه، مثل: <b>محاسب</b>"
+    else:
+        lines = ["<b>💼 مسمياتك الوظيفية:</b>"]
+        for t in ts:
+            lines.append("• " + esc(t["title"]) + (" (من سيرتك)" if t.get("from") == "cv" else ""))
+        lines.append("\nلإضافة مسمى اكتبه هنا. ولحذف مسمى اضغط عليه:")
+        text = "\n".join(lines)
+        kb = [[{"text": "❌ " + t["title"][:40], "callback_data": "del:" + _h(t["title"])}] for t in ts]
+        kb.append([{"text": "🗑️ حذف كل المسميات", "callback_data": "del:all"}])
+    kb.append([{"text": "➕ إضافة مسمى", "callback_data": "addt"}, {"text": "رجوع", "callback_data": "alerts"}])
+    return text, {"inline_keyboard": kb}
 
 
 def sources_menu(chat_id, rebuild=True):
@@ -739,41 +1136,8 @@ def sources_menu(chat_id, rebuild=True):
             row = []
     if row:
         kb.append(row)
+    kb.append([{"text": "رجوع", "callback_data": "alerts"}])
     return text, {"inline_keyboard": kb}
-
-
-def settings_menu(chat_id):
-    sub = get_sub(chat_id) or {}
-    mode = sub.get("mode", "daily")
-    city = sub.get("city") or ""
-    city_label = "عن بعد فقط" if city == normalize.REMOTE else (city or "كل المدن")
-    text = (f"<b>الوظائف الجديدة تصلك:</b> {MODES.get(mode, '')}\n"
-            f"<b>المدينة:</b> {esc(city_label)}\n\n"
-            f"الرسالة اليومية تصل الساعة {config.BOT_DIGEST_HOUR} صباحاً بكل الوظائف الجديدة لمسمياتك.")
-
-    def b(label, m):
-        return {"text": ("✅ " if mode == m else "") + label, "callback_data": "mode:" + m}
-    kb = [[b("📅 يومياً", "daily"), b("⚡ فوراً", "instant"), b("⏸️ إيقاف", "off")],
-          [{"text": "📍 تغيير المدينة", "callback_data": "city:menu"}],
-          [{"text": "🗑️ حذف كل بياناتي", "callback_data": "wipe:ask"}]]
-    return text, {"inline_keyboard": kb}
-
-
-def city_menu(chat_id):
-    sub = get_sub(chat_id) or {}
-    cur = sub.get("city") or ""
-    kb = [[{"text": ("✅ " if not cur else "") + "كل المدن", "callback_data": "city:all"},
-           {"text": ("✅ " if cur == normalize.REMOTE else "") + "عن بعد فقط", "callback_data": "city:remote"}]]
-    row = []
-    for i, c in enumerate(CITIES):
-        row.append({"text": ("✅ " if c == cur else "") + c, "callback_data": f"city:{i}"})
-        if len(row) == 3:
-            kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
-    kb.append([{"text": "رجوع", "callback_data": "settings"}])
-    return "اختر المدينة (تصلك معها الوظائف عن بعد والوظائف غير محددة المدينة):", {"inline_keyboard": kb}
 
 
 def _set_mode(s, mode):
@@ -823,7 +1187,7 @@ def process_cv(chat_id, text, from_file=False):
         lines.append("\n<b>مهاراتك:</b> " + esc("، ".join(prof["skills"])))
     if added:
         lines.append("\n<b>وظائف تناسب خبرتك</b> (أضفناها لمسمياتك):\n" + "\n".join("• " + esc(t) for t in added))
-        lines.append(f"\nيمكنك حذف أي منها من {BTN_TITLES}.")
+        lines.append(f"\nيمكنك حذف أي منها من {BTN_ALERTS}.")
     lines.append("\n🔒 لم نحفظ الملف ولا النص، فقط المسميات والمهارات.")
     tg.send(chat_id, "\n".join(lines))
     show_jobs(chat_id)
@@ -870,12 +1234,25 @@ def _wipe_question():
                                   {"text": "لا", "callback_data": "wipe:no"}]]})
 
 
+def _end_setup(chat_id):
+    """Leave an unfinished guided setup (the person went to their jobs or the alerts panel)."""
+    sub = get_sub(chat_id)
+    if sub and sub.get("setup"):
+        with _edit_sub(chat_id, create=False) as s:
+            if s is not None:
+                s["setup"] = ""
+
+
 def handle_private(msg):
     chat_id = msg["chat"]["id"]
     text = (msg.get("text") or "").strip()
     if msg.get("document"):
+        if not config.BOT_CV_ENABLED:
+            return tg.send(chat_id, COMING_SOON_CV, reply_markup=MAIN_KB)
         return handle_document(chat_id, msg["document"])
     if msg.get("photo"):
+        if not config.BOT_CV_ENABLED:
+            return tg.send(chat_id, COMING_SOON_CV, reply_markup=MAIN_KB)
         return tg.send(chat_id, "أرسل السيرة كملف PDF أو Word، أو اكتبها هنا نصاً (الصور لا تُقرأ).",
                        reply_markup=MAIN_KB)
     if not text:
@@ -890,18 +1267,23 @@ def handle_private(msg):
             if s.get("mode") == "off":
                 _set_mode(s, "daily")
             new_user = not s.get("titles")
+            if not new_user:
+                s["setup"] = ""
         tg.send(chat_id, HELP, reply_markup=MAIN_KB)
         if new_user:
-            tg.send(chat_id, "جرّب الآن، اضغط على مثال أو اكتب المسمى الذي تبحث عنه:", reply_markup=_examples_kb())
+            wizard(chat_id, "titles")
         return
     if cmd == "/help" or text == BTN_HELP:
         return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
     if cmd == "/jobs" or text == BTN_JOBS:
+        _end_setup(chat_id)
         return show_jobs(chat_id)
     if cmd == "/titles" or text == BTN_TITLES:
         t, kb = titles_menu(chat_id)
-        return tg.send(chat_id, t, reply_markup=kb or MAIN_KB)
-    if cmd == "/cv" or text == BTN_CV:
+        return tg.send(chat_id, t, reply_markup=kb)
+    if cmd in ("/cv",) or text in (BTN_CV, BTN_CV_OLD):
+        if not config.BOT_CV_ENABLED:
+            return tg.send(chat_id, COMING_SOON_CV, reply_markup=MAIN_KB)
         with _edit_sub(chat_id) as s:
             s["awaiting"] = "cv"
             cv = s.get("cv")
@@ -912,13 +1294,16 @@ def handle_private(msg):
     if cmd == "/sources" or text == BTN_SOURCES:
         t, kb = sources_menu(chat_id)
         return tg.send(chat_id, t, reply_markup=kb)
-    if cmd == "/settings" or text == BTN_SETTINGS:
-        t, kb = settings_menu(chat_id)
+    if cmd in ("/settings", "/alerts") or text in (BTN_ALERTS, BTN_SETTINGS):
+        _end_setup(chat_id)
+        t, kb = alerts_menu(chat_id)
         return tg.send(chat_id, t, reply_markup=kb)
+    if cmd == "/setup":
+        return wizard(chat_id, "titles")
     if cmd == "/stop":
         with _edit_sub(chat_id) as s:
             _set_mode(s, "off")
-        return tg.send(chat_id, f"أوقفنا التنبيهات. يمكنك البحث في أي وقت، وإعادة تفعيلها من {BTN_SETTINGS}.",
+        return tg.send(chat_id, f"أوقفنا التنبيهات. يمكنك البحث في أي وقت، وإعادة تفعيلها من {BTN_ALERTS}.",
                        reply_markup=MAIN_KB)
     if cmd == "/delete":
         t, kb = _wipe_question()
@@ -927,7 +1312,7 @@ def handle_private(msg):
         return tg.send(chat_id, HELP, reply_markup=MAIN_KB)
 
     sub = get_sub(chat_id) or {}
-    if (sub.get("awaiting") == "cv" and len(text) >= 40) or _looks_like_cv(text):
+    if config.BOT_CV_ENABLED and ((sub.get("awaiting") == "cv" and len(text) >= 40) or _looks_like_cv(text)):
         return process_cv(chat_id, text)
     return handle_text(chat_id, text)
 
@@ -944,6 +1329,21 @@ def _index(arg, size):
     return int(arg) if DIGIT_RE.fullmatch(arg or "") and int(arg) < size else None
 
 
+def _toggle_city(s, arg):
+    cur = cities_of(s)
+    if arg == "all":
+        cur = []
+    elif arg == "remote":
+        cur = [c for c in cur if c != normalize.REMOTE] if normalize.REMOTE in cur else cur + [normalize.REMOTE]
+    else:
+        i = _index(arg, len(CITIES))
+        if i is None:
+            return
+        c = CITIES[i]
+        cur = [x for x in cur if x != c] if c in cur else cur + [c]
+    _set_cities(s, cur)
+
+
 def handle_callback(cb):
     data = cb.get("data") or ""
     msg = cb.get("message") or {}
@@ -958,21 +1358,39 @@ def handle_callback(cb):
         return _show(chat_id, mid, ("لم يُحذف شيء.", None))
     if data.startswith("try:"):
         i = _index(data[4:], len(EXAMPLES))
-        return add_titles(chat_id, wanted=[EXAMPLES[i]], city="") if i is not None else None
+        return add_titles(chat_id, wanted=[EXAMPLES[i]]) if i is not None else None
     if data.startswith("sug:"):
         known = (storage.read("bot_sessions").get(_key(chat_id)) or {}).get("sug")
         title = known.get(data[4:]) if isinstance(known, dict) else None
         if not title:
             return tg.send(chat_id, f"انتهت صلاحية هذا الاقتراح. اضغط {BTN_JOBS} للبحث من جديد.", reply_markup=MAIN_KB)
-        return add_titles(chat_id, wanted=[title], city="")
-    if not get_sub(chat_id):  # a button from before /delete: nothing to change
+        return add_titles(chat_id, wanted=[title])
+    sub = get_sub(chat_id)
+    if not sub:  # a button from before /delete: nothing to change
         return tg.send(chat_id, START_HINT, reply_markup=MAIN_KB)
+    in_setup = sub.get("setup") == "exp"
+    if data in ("alerts", "settings") and sub.get("setup"):
+        _end_setup(chat_id)
+    if data.startswith("wiz:"):
+        return wizard(chat_id, data[4:], mid)
+    if data in ("alerts", "settings"):
+        return _show(chat_id, mid, alerts_menu(chat_id))
+    if data == "titles":
+        return _show(chat_id, mid, titles_menu(chat_id))
+    if data == "addt":
+        with _edit_sub(chat_id, create=False) as s:
+            if s is not None:
+                s["awaiting"] = "titles"
+        return tg.send(chat_id, "اكتب المسمى الذي تريد إضافته (أو عدة مسميات بينها فاصلة)، مثل: <b>محاسب تكاليف</b>",
+                       reply_markup=MAIN_KB)
     if data.startswith("del:"):
         h = data[4:]
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
                 s["titles"] = [] if h == "all" else [t for t in s["titles"] if _h(t["title"]) != h]
         return _show(chat_id, mid, titles_menu(chat_id))
+    if data == "src:menu":
+        return _show(chat_id, mid, sources_menu(chat_id))
     if data.startswith("src:"):
         arg = data[4:]
         names = (storage.read("bot_sessions").get(_key(chat_id)) or {}).get("src") or []
@@ -986,27 +1404,33 @@ def handle_callback(cb):
                     cur = s.get("sources") or []
                     s["sources"] = [x for x in cur if x != n] if n in cur else cur + [n]
         return _show(chat_id, mid, sources_menu(chat_id, rebuild=False))
+    if data == "exp:menu":
+        return _show(chat_id, mid, exp_menu(chat_id))
+    if data.startswith("exp:"):
+        arg = data[4:]
+        if arg != "any" and arg not in normalize.EXPERIENCE:
+            return None
+        with _edit_sub(chat_id, create=False) as s:
+            if s is not None:
+                s["exp"] = "" if arg == "any" else arg
+        if in_setup:
+            return wizard(chat_id, "cities", mid)
+        return _show(chat_id, mid, alerts_menu(chat_id))
     if data.startswith("mode:") and data[5:] in MODES:
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
                 _set_mode(s, data[5:])
-        return _show(chat_id, mid, settings_menu(chat_id))
-    if data == "settings":
-        return _show(chat_id, mid, settings_menu(chat_id))
-    if data.startswith("city:"):
-        arg = data[5:]
-        if arg == "menu":
-            return _show(chat_id, mid, city_menu(chat_id))
-        i = _index(arg, len(CITIES))
+        if sub.get("setup") == "mode":
+            return finish_setup(chat_id, mid)
+        return _show(chat_id, mid, alerts_menu(chat_id))
+    if data in ("cty:menu", "city:menu"):
+        return _show(chat_id, mid, cities_menu(chat_id, wizard_on=sub.get("setup") == "cities"))
+    if data.startswith(("cty:", "city:")):
+        arg = data.split(":", 1)[1]
         with _edit_sub(chat_id, create=False) as s:
             if s is not None:
-                if arg == "all":
-                    s["city"] = ""
-                elif arg == "remote":
-                    s["city"] = normalize.REMOTE
-                elif i is not None:
-                    s["city"] = CITIES[i]
-        return _show(chat_id, mid, settings_menu(chat_id))
+                _toggle_city(s, arg)
+        return _show(chat_id, mid, cities_menu(chat_id, wizard_on=sub.get("setup") == "cities"))
     if data == "wipe:ask":
         t, kb = _wipe_question()
         return tg.send(chat_id, t, reply_markup=kb)
@@ -1215,7 +1639,8 @@ def on_new_jobs(added):
     """Instant alerts + group/channel feed queues for newly stored jobs. Returns messages sent."""
     if not tg.enabled() or not added:
         return 0
-    fresh = [j for j in added if not j.get("is_demo") and not j.get("scam_risk")]
+    fresh = [j for j in added if not j.get("is_demo") and not j.get("scam_risk")
+             and (not config.BOT_ORIGIN_ONLY or normalize.original_link(j))]
     if not fresh:
         return 0
     subs = storage.read("subscribers")
