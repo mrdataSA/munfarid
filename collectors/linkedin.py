@@ -16,7 +16,7 @@ no evasion, no login.
 
 import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlsplit, urlunsplit
 
 from backend import config, storage
@@ -50,8 +50,24 @@ class Disabled(Exception):
 BLOCK_COOLDOWN_HOURS = 24
 
 
+RIYADH = timezone(timedelta(hours=3))
+
+
 def _blocked_until():
     return storage.read("sources_status").get("linkedin", {}).get("blocked_until", "")
+
+
+def _paused_until(until):
+    """The pause end as an aware time (a pause written without a zone was written in Riyadh time),
+    or None when there is no pause or it is over. The PC and the cloud run in different zones."""
+    if not until:
+        return None
+    try:
+        d = datetime.fromisoformat(until)
+    except ValueError:
+        return None
+    d = d if d.tzinfo else d.replace(tzinfo=RIYADH)
+    return d if d > datetime.now(timezone.utc) else None
 
 
 def _record_block(reason):
@@ -59,7 +75,7 @@ def _record_block(reason):
         entry = st.setdefault("linkedin", {})
         n = entry.get("blocks_in_row", 0) + 1
         hours = _block_hours(reason, n)
-        entry["blocked_until"] = (datetime.now() + timedelta(hours=hours)).isoformat(timespec="seconds")
+        entry["blocked_until"] = (datetime.now(RIYADH) + timedelta(hours=hours)).isoformat(timespec="seconds")
         entry["blocks_in_row"] = n
         entry["last_block_reason"] = reason
     msg = "حظر من LinkedIn (" + reason + "). توقف " + str(hours) + " ساعات."
@@ -178,9 +194,9 @@ def collect(source):
     """
     if not config.LINKEDIN_ENABLED:
         raise Disabled("معطّل. فعّله من ملف .env (LINKEDIN_ENABLED=1) بوجود الإذن المكتوب.")
-    until = _blocked_until()
-    if until and until > datetime.now().isoformat(timespec="seconds"):
-        raise Disabled("متوقف مؤقتاً بعد حظر حتى " + until.replace("T", " ")[:16])
+    until = _paused_until(_blocked_until())
+    if until:
+        raise Disabled("متوقف مؤقتاً بعد حظر حتى " + until.astimezone(RIYADH).strftime("%Y-%m-%d %H:%M") + " بتوقيت الرياض")
     budget = max(0, config.LINKEDIN_DAILY_CAP - _today_count())
     if budget == 0:
         raise Disabled("وصل الحد اليومي للطلبات.")

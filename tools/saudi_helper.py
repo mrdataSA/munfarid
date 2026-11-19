@@ -208,8 +208,7 @@ def run_via_site(minutes, only=None):
     for key in FREQUENT:   # the PC's own sweep state (where it stopped, its pauses) stays on the PC
         if key in mine:
             status[key] = mine[key]
-        elif key in status:   # first run here: start from where the cloud's sweep ended, not its pause
-            status[key] = {k: v for k, v in status[key].items() if k not in ("blocked_until", "blocks_in_row")}
+        # first run here: start from where the cloud's sweep ended, its pause included (a block is honoured)
     storage.write("sources_status", status)
     storage.write("inbox", {origin.INBOX_KEY: {"pending": pending}} if pending else {})
     report = run(minutes, send=send_batch_to_site, status=status, only=only)
