@@ -511,6 +511,10 @@ def bot_status():
     out["cloud_ok"] = bool(last) and (datetime.now().astimezone() - datetime.fromisoformat(last)).total_seconds() < 2.5 * 3600
     helper = _helper_named(st.get("helper_last"))
     out["helper"] = helper
+    li = st.get("helper_linkedin") or {}
+    out["linkedin"] = li
+    out["linkedin_ok"] = bool(li.get("at")) and not li.get("error") and (
+        datetime.now().astimezone() - datetime.fromisoformat(li["at"])).total_seconds() < 2 * 3600
     out["helper_ok"] = bool(helper.get("at")) and (
         datetime.now().astimezone() - datetime.fromisoformat(helper["at"])).total_seconds() < 30 * 3600
     return out
@@ -537,16 +541,25 @@ def _cached(key, seconds, fn):
     return val
 
 
+def _owner_who():
+    oc = storage.read("bot_state").get("owner_chat")
+    return who(oc) if oc else ""
+
+
 def _subs():
+    """Job seekers and group feeds. The owner (Raed testing his own bot) is not counted."""
     subs = storage.read("subscribers")
-    users = [s for s in subs.values() if s.get("kind", "user") == "user"]
+    oc = storage.read("bot_state").get("owner_chat")
+    users = [s for s in subs.values() if s.get("kind", "user") == "user" and s.get("chat_id") != oc]
     feeds = [s for s in subs.values() if s.get("kind") == "feed"]
     return users, feeds
 
 
-def _person(e):
-    """A real person's event (not a group, not the dashboard's own login, which has no who)."""
-    return str(e.get("who") or "").startswith("u")
+def _person(e, skip=None):
+    """A real person's event (not a group, not the dashboard's own login, which has no who;
+    not the owner when `skip` is his code)."""
+    w = str(e.get("who") or "")
+    return w.startswith("u") and w != skip
 
 
 def _cities_of(s):
@@ -572,9 +585,11 @@ def overview():
     kinds["relay_pending"] = wait.get("count", 0)
     users, feeds = _subs()
     subscribed = [s for s in users if s.get("titles") and s.get("mode") in ("daily", "instant")]
+    me = _owner_who()
+    events = [e for e in events if not me or e.get("who") != me]   # the owner's own tries are not counted
     ev_today = [e for e in events if _day(e["ts"]) == today]
-    people_ever = {e["who"] for e in events if _person(e)} | {who(s["chat_id"]) for s in users}
-    active7 = {e["who"] for e in events if _person(e) and _day(e["ts"]) > week_ago}
+    people_ever = {e["who"] for e in events if _person(e, me)} | {who(s["chat_id"]) for s in users}
+    active7 = {e["who"] for e in events if _person(e, me) and _day(e["ts"]) > week_ago}
     new_users = Counter(_day(s.get("created_at")) for s in users)
     titles = Counter(t["title"] for s in users for t in s.get("titles") or [])
     cities = Counter(c for s in users for c in _cities_of(s))
@@ -727,9 +742,11 @@ def users_report():
     events = events_rows()
     rows = jobs_rows()
     live = live_ids()
-    people_ever = {e["who"] for e in events if _person(e)} | {who(s["chat_id"]) for s in users}
+    me = _owner_who()
+    events = [e for e in events if not me or e.get("who") != me]
+    people_ever = {e["who"] for e in events if _person(e, me)} | {who(s["chat_id"]) for s in users}
     subscribed = [s for s in users if s.get("titles") and s.get("mode") in ("daily", "instant")]
-    clicked = {e["who"] for e in events if e["kind"] == "click" and _person(e)}
+    clicked = {e["who"] for e in events if e["kind"] == "click" and _person(e, me)}
     searches = [e for e in events if e["kind"] == "search"]
     zero = Counter("، ".join((e.get("data") or {}).get("titles") or []) for e in searches
                    if not (e.get("data") or {}).get("results"))

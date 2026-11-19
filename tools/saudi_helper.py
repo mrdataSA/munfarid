@@ -4,6 +4,9 @@ Some sites (Jadarat behind Cloudflare, Tanqeeb, some relay sites) answer GitHub'
 "403 / Attention Required", so the cloud never reads them. Raed's old PC stays on all day, and
 Windows runs this ONCE A DAY for up to one hour (tools/install_saudi_helper.ps1):
 
+0. LinkedIn (Raed holds its written permission): every 30 minutes, its own task, "--only linkedin".
+   The cloud never reads LinkedIn: one polite reader from a home connection, same pace and pauses
+   as always (20-40 s between pages, daily cap; a 429 or a login wall pauses it, never retried elsewhere);
 1. every source marked "cloud": "helper" in collectors/sources.json, plus every source the cloud
    found blocked (403 / challenge page) on its last run (never LinkedIn or X, never a 429 rate
    limit: see collectors/runner.helper_can_fetch), read the same polite way the cloud would
@@ -22,6 +25,7 @@ breaks: those sources just wait for the next day.
     python tools/saudi_helper.py               # what the daily task runs
     python tools/saudi_helper.py --minutes 5   # a short test run
     python tools/saudi_helper.py --check       # only checks the connection to the site
+    python tools/saudi_helper.py --only linkedin --minutes 25   # what the LinkedIn task runs
 """
 
 import json
@@ -54,6 +58,7 @@ if not os.environ.get("DATABASE_URL") and _secret("database_url"):
 if not os.environ.get("DATABASE_URL"):
     os.environ.setdefault("RIZQ_DATA_DIR", os.path.join(SECRET_DIR, "helper_data"))
 os.environ.setdefault("RIZQ_NO_ENV_FILE", "1")
+os.environ.setdefault("LINKEDIN_ENABLED", "1")   # Raed's written permission; only read when sources.json says so
 
 from backend import config, storage  # noqa: E402
 
@@ -62,6 +67,7 @@ WINDOW_MINUTES = 55          # one hour a day (the task stops it at 70 minutes i
 ORIGIN_SHARE = 0.25          # time kept for the relay pages the cloud could not open
 SITE = (os.environ.get("MUNFARID_SITE") or "https://munfaridsa.vercel.app").rstrip("/")
 CHUNK_BYTES = 1_500_000      # one upload stays well under the site's 3 MB request limit
+FREQUENT = ("linkedin",)     # sources with their own, more frequent task (never in the daily run)
 log = logging.getLogger("rizq.helper")
 
 
@@ -136,9 +142,10 @@ def wanted_sources(all_sources, status):
     return out
 
 
-def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
+def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None, only=None):
     """Fetch every wanted source, then the waiting relay pages. `send(key, batch)` hands each
-    source's jobs to the cloud as soon as they are fetched."""
+    source's jobs to the cloud as soon as they are fetched. only=("linkedin",): just those sources
+    (no relay pages); otherwise the frequent ones are left to their own task."""
     from collectors import base, origin, runner
     origin.HELPER_MODE = True
     started = time.time()
@@ -146,7 +153,9 @@ def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
     origin_time = minutes * 60 * ORIGIN_SHARE
     status = storage.read("sources_status") if status is None else status
     sources = wanted_sources(runner.load_sources(), status)
-    report = {"at": storage.now_iso(), "sources": {}, "origin_links": 0, "host": socket.gethostname()[:60]}
+    sources = [s for s in sources if (s["key"] in only if only else s["key"] not in FREQUENT)]
+    report = {"at": storage.now_iso(), "sources": {}, "origin_links": 0, "host": socket.gethostname()[:60],
+              "mode": "linkedin" if only and "linkedin" in only else "daily"}
     for src in sources:
         left = deadline - origin_time - time.time()
         if left <= 0:
@@ -156,9 +165,9 @@ def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
         t0 = time.time()
         try:
             items = fn(src) or []
-        except (base.Disallowed, base.Blocked, base.FetchError) as e:
+        except (base.Disallowed, base.Blocked, base.FetchError, runner.linkedin.Disabled) as e:
             log.warning("%s: %s", src["key"], e)
-            report["sources"][src["key"]] = f"error: {e}"[:120]
+            report["sources"][src["key"]] = f"{'paused' if isinstance(e, runner.linkedin.Disabled) else 'error'}: {e}"[:160]
             continue
         except Exception:
             log.exception("%s crashed", src["key"])
@@ -170,6 +179,8 @@ def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
             log.exception("%s: original links failed", src["key"])
         batch = {"at": storage.now_iso(), "items": items, "note": src.pop("_note", ""),
                  "filter_jobs": src.get("filter_jobs")}
+        if batch["note"]:
+            report.setdefault("notes", {})[src["key"]] = batch["note"][:300]
         try:
             send(src["key"], batch)
             report["sources"][src["key"]] = len(items)
@@ -178,7 +189,7 @@ def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
             report["sources"][src["key"]] = f"not sent: {e}"[:120]
         log.info("%s: %d items (%.0fs)", src["key"], len(items), time.time() - t0)
     left = deadline - time.time()
-    if left > 30:
+    if left > 30 and not only:
         try:
             report["origin_links"] = origin.resolve_pending(left)
         except Exception:
@@ -187,14 +198,21 @@ def run(minutes=WINDOW_MINUTES, send=keep_batch_locally, status=None):
     return report
 
 
-def run_via_site(minutes):
+def run_via_site(minutes, only=None):
     """The normal mode: the site hands out the work and takes the results (helper key)."""
     from collectors import origin
     work = _api("GET", "/api/helper/work")
-    pending = list(work.get("pending") or [])
-    storage.write("sources_status", work.get("sources_status") or {})
+    pending = [] if only else list(work.get("pending") or [])
+    status = dict(work.get("sources_status") or {})
+    mine = storage.read("sources_status")
+    for key in FREQUENT:   # the PC's own sweep state (where it stopped, its pauses) stays on the PC
+        if key in mine:
+            status[key] = mine[key]
+        elif key in status:   # first run here: start from where the cloud's sweep ended, not its pause
+            status[key] = {k: v for k, v in status[key].items() if k not in ("blocked_until", "blocks_in_row")}
+    storage.write("sources_status", status)
     storage.write("inbox", {origin.INBOX_KEY: {"pending": pending}} if pending else {})
-    report = run(minutes, send=send_batch_to_site, status=work.get("sources_status") or {})
+    report = run(minutes, send=send_batch_to_site, status=status, only=only)
     box = storage.read("inbox").get(origin.INBOX_KEY) or {}
     left = set(box.get("pending") or [])
     tried = [u for u in pending if u not in left]
@@ -204,10 +222,10 @@ def run_via_site(minutes):
     return report
 
 
-def run_with_database(minutes):
-    report = run(minutes)
+def run_with_database(minutes, only=None):
+    report = run(minutes, only=only)
     with storage.edit("bot_state") as st:   # shown on the dashboard: when the helper last ran and what it did
-        st["helper_last"] = report
+        st["helper_linkedin" if report.get("mode") == "linkedin" else "helper_last"] = report
     return report
 
 
@@ -227,13 +245,15 @@ def main():
     minutes = WINDOW_MINUTES
     if "--minutes" in sys.argv:
         minutes = max(2, int(sys.argv[sys.argv.index("--minutes") + 1]))
+    only = tuple(sys.argv[sys.argv.index("--only") + 1].split(",")) if "--only" in sys.argv else None
     try:
-        report = run_with_database(minutes) if config.DATABASE_URL else run_via_site(minutes)
+        report = run_with_database(minutes, only) if config.DATABASE_URL else run_via_site(minutes, only)
     except SiteError as e:
         log.error("helper stopped: %s", e)
         try:   # the dashboard shows why (when the site itself is reachable)
             _api("POST", "/api/helper/report", {"report": {"at": storage.now_iso(), "error": str(e),
-                                                             "host": socket.gethostname()[:60]}}, tries=1)
+                                                             "host": socket.gethostname()[:60],
+                                                             "mode": "linkedin" if only else "daily"}}, tries=1)
         except SiteError:
             pass
         sys.exit(1)

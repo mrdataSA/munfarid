@@ -247,6 +247,21 @@ try:
           and ib["_origin"]["pending"] == ["https://relay.example/2"]
           and ib["_origin"]["done"] == {"https://relay.example/1": "https://emp.example/j"}
           and storage.read("bot_state")["helper_last"]["sources"] == {"jadarat": 1})
+    hreq("POST", "/api/helper/report", {"report": {"at": "2026-11-19T05:00:00+03:00", "mode": "linkedin",
+                                                   "sources": {"linkedin": 40}, "notes": {"linkedin": "3 صفحات"}}})
+    bs = storage.read("bot_state")
+    check("helper API: the LinkedIn task reports apart from the daily run", bs["helper_linkedin"]["sources"] == {"linkedin": 40}
+          and bs["helper_last"]["sources"] == {"jadarat": 1})
+    hreq("POST", "/api/helper/batch", {"key": "linkedin", "batch": {"at": "2026-11-19T05:00:00+03:00",
+                                                                    "items": [{"title": "Data Analyst", "url": "https://sa.linkedin.com/jobs/view/1"}]}})
+    check("helper API: LinkedIn jobs come from the PC", storage.read("inbox")["linkedin"]["batches"][-1]["items"][0]["title"] == "Data Analyst")
+    before = analytics.overview()["people"]["tried"]
+    with storage.edit("bot_state") as st:
+        st["owner_chat"] = 11
+    after = analytics.overview()["people"]["tried"]
+    check("people: the owner trying his own bot is not counted", after == before - 1, (before, after))
+    with storage.edit("bot_state") as st:
+        st["owner_chat"] = 777
     try:
         hreq("POST", "/api/helper/batch", {"key": "sabbar", "batch": {"items": [{"title": "x"}]}})
         check("helper API: not for sources the cloud reads itself", False)

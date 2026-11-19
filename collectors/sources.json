@@ -224,7 +224,9 @@
     "type": "linkedin",
     "enabled": true,
     "fast": true,
-    "max_pages_per_run": 25
+    "max_pages_per_run": 25,
+    "cloud": "helper",
+    "helper_every_minutes": 30
   },
   {
     "key": "careerjet",

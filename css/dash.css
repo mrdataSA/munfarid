@@ -100,7 +100,8 @@ input[type=password] { width: 100%; margin: 10px 0; }
 .card h3 { margin: 0 0 12px; font-size: 16px; }
 
 /* status + KPI tiles */
-.status-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.status-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1100px) { .status-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .status-row { grid-template-columns: 1fr; } }
 .status { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
 .status .badge { flex: none; }

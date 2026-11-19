@@ -254,7 +254,22 @@
       helper.at ? 'آخر تشغيل ' + ago(helper.at) + (got ? ' · ' + esc(got) : '') : 'لم يشتغل بعد على جهازك';
     return `<div class="status">${badge(...botState)}<div><b>البوت</b><span class="muted small">${botSub}</span></div></div>` +
       `<div class="status">${badge(b.cloud_ok ? 'good' : 'bad', b.cloud_ok ? 'يعمل' : 'متأخر')}<div><b>الجمع السحابي (كل ساعة)</b><span class="muted small">آخر تشغيل ${ago(b.cloud_last_run)}</span></div></div>` +
-      `<div class="status">${helperBadge}<div><b>جهازي (مرة يومياً 4 الفجر)</b><span class="muted small">${helperSub}</span></div></div>`;
+      `<div class="status">${helperBadge}<div><b>جهازي (مرة يومياً 4 الفجر)</b><span class="muted small">${helperSub}</span></div></div>` +
+      linkedinCard(b);
+  }
+
+  // LinkedIn: read from my PC every 30 minutes (its own task)
+  function linkedinCard(b) {
+    const li = b.linkedin || {};
+    const got = (li.sources || {}).linkedin;
+    const paused = typeof got === 'string' && got.startsWith('paused');
+    const state = li.error ? ['bad', 'تعثّر'] : paused ? ['warn', 'متوقف مؤقتاً'] : b.linkedin_ok ? ['good', 'يعمل'] :
+      li.at ? ['warn', 'متأخر'] : ['idle', 'لم يبدأ'];
+    const note = (li.notes || {}).linkedin || '';
+    const sub = li.error ? `آخر محاولة ${ago(li.at)} · ${esc(li.error)}` :
+      li.at ? `آخر جولة ${ago(li.at)}` + (typeof got === 'number' ? ` · ${n(got)} وظيفة` : paused ? ` · ${esc(got.replace(/^paused: /, ''))}` : '') +
+        (note ? `<br>${esc(note.slice(0, 140))}` : '') : 'يبدأ من جهازك كل نصف ساعة';
+    return `<div class="status">${badge(...state)}<div><b>LinkedIn (من جهازي كل 30 دقيقة)</b><span class="muted small">${sub}</span></div></div>`;
   }
 
   async function loadHome() {

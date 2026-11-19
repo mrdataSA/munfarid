@@ -701,9 +701,11 @@ def api_helper_report(h):
               "origin_links": r.get("origin_links") if isinstance(r.get("origin_links"), int) else 0,
               "sources": {str(k)[:40]: (v if isinstance(v, int) else str(v)[:120])
                           for k, v in (r.get("sources") or {}).items()} if isinstance(r.get("sources"), dict) else {},
-              "host": str(r.get("host") or "")[:60], "error": str(r.get("error") or "")[:300]}
-    with storage.edit("bot_state") as st:
-        st["helper_last"] = report
+              "host": str(r.get("host") or "")[:60], "error": str(r.get("error") or "")[:300],
+              "notes": {str(k)[:40]: str(v)[:300] for k, v in (r.get("notes") or {}).items()}
+              if isinstance(r.get("notes"), dict) else {}}
+    with storage.edit("bot_state") as st:   # the LinkedIn task (every 30 min) and the daily run, apart
+        st["helper_linkedin" if r.get("mode") == "linkedin" else "helper_last"] = report
     return ok()
 
 
