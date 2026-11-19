@@ -34,7 +34,7 @@ if (-not (Test-Path $venvPy)) { throw 'Python could not be installed. Install Py
 $venvPyw = Join-Path $root '.venv\Scripts\pythonw.exe'
 
 Write-Host '2/5 Packages and the browser...' -ForegroundColor Cyan
-& $venvPy -m pip install --disable-pip-version-check -q -r requirements-collect.txt 'w3lib<2.3'
+& $venvPy -m pip install --disable-pip-version-check -q -r requirements-collect.txt
 if ($LASTEXITCODE -ne 0) { throw 'Installing the packages failed (check the internet connection), then run this again.' }
 & $venvPy -m playwright install chromium
 if ($LASTEXITCODE -ne 0) { throw 'Installing the Chromium browser failed, then run this again.' }
