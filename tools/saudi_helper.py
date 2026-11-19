@@ -59,6 +59,9 @@ if not os.environ.get("DATABASE_URL"):
     os.environ.setdefault("RIZQ_DATA_DIR", os.path.join(SECRET_DIR, "helper_data"))
 os.environ.setdefault("RIZQ_NO_ENV_FILE", "1")
 os.environ.setdefault("LINKEDIN_ENABLED", "1")   # Raed's written permission; only read when sources.json says so
+# A safety net, not a target: each sweep stops at the first jobs it has already seen, so it only asks for
+# what is new. 1,000 pages = up to 10,000 jobs a day; Saudi Arabia posts far fewer (Raed, 2026-11-19: no limit)
+os.environ.setdefault("LINKEDIN_DAILY_CAP", "1000")
 
 from backend import config, storage  # noqa: E402
 
