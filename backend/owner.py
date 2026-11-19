@@ -82,6 +82,25 @@ def link_owner(chat_id, token):
     return ok
 
 
+# ---------------------------------------------------------------- the Saudi helper's key
+
+def set_helper_key(key):
+    """Cloud run: the key the Saudi helper (Raed's PC) sends to /api/helper/* (from the HELPER_KEY
+    secret; only its hash is kept). The PC never needs the database password."""
+    key = (key or "").strip()
+    if len(key) < 24:
+        return False
+    with storage.edit("bot_state") as st:
+        if st.get("helper_key") != _h(key):
+            st["helper_key"] = _h(key)
+    return True
+
+
+def helper_key_ok(key):
+    want = storage.read("bot_state").get("helper_key") or ""
+    return bool(want and key) and hmac.compare_digest(want, _h(key))
+
+
 # ---------------------------------------------------------------- login tickets
 
 def new_ticket():

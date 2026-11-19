@@ -16,13 +16,15 @@ from urllib.parse import urlsplit
 
 from backend import ai, analytics, bot, catalog, config, enrich, normalize, notifier, storage
 
-from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, x_api
+from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, waiting, x_api
 
 log = logging.getLogger("rizq.collect")
 ENRICH_BEFORE_ALERT = 8    # new jobs per source classified by AI before alerting (one Groq call)
 ORIGIN_FULL_SECONDS = 900   # relay pages opened per full run (new items + backfill), all sources together
 ORIGIN_FAST_SECONDS = 300
 ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at half the daily budget)
+COMPANY_BEFORE_ALERT = 30  # new jobs without an employer: the AI reads the ad for it before alerting
+COMPANY_BACKFILL = 200     # stored jobs without an employer, per full run
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
 
@@ -226,6 +228,8 @@ def _store_source(src, items, totals, sent_per_user):
 
     Sources run in sources.json order, so direct sources are merged before the
     re-posting aggregators (Careerjet / Jooble last) and keep their own links.
+    A job is added only with its original link: one whose only link is a relay page waits in
+    collectors/waiting.py until that link is found.
     """
     ai_idx = [i for i, it in enumerate(items) if it.get("needs_ai")]
     ai_results = ai.extract_posts([items[i].get("raw_text") or "" for i in ai_idx]) if ai_idx else []
@@ -239,27 +243,68 @@ def _store_source(src, items, totals, sent_per_user):
             continue
         if job:
             jobs.append(job)
+    known = catalog.original_links_by_url() if any(waiting.needs_origin(j) for j in jobs) else {}
+    ready, held = [], []
+    for j in jobs:
+        if waiting.needs_origin(j):
+            link = known.get(normalize.canonical_url(origin._target(j)))
+            if link:                       # the same relay page is stored already, with its original link
+                j["apply_url"] = link
+            else:
+                held.append(j)
+                continue
+        ready.append(j)
+    totals["held"] = totals.get("held", 0) + waiting.hold(held, src["name"])
+    _set_status(src["key"], jobs=len(ready), held=len(held))
+    totals["items"] += len(items)
+    _add_jobs(src["key"], ready, totals, sent_per_user)
+    totals["ai_used"] = totals["ai_used"] or any(r is not None for r in ai_results)
+
+
+def _add_jobs(key, jobs, totals, sent_per_user):
+    """Store jobs that carry their original link, then alert (shared by sources and the waiting room)."""
     added = catalog.merge_collected(jobs) if jobs else []
+    if added:
+        try:   # the employer, when the ad names it but the site did not say (before the dashboard and alerts)
+            enrich.fill_companies(added, COMPANY_BEFORE_ALERT)
+        except Exception:
+            log.warning("company search failed for %s:\n%s", key, traceback.format_exc())
     if added and config.DATABASE_URL:
         try:  # the owner's dashboard sees each new job as soon as it is stored
             analytics.sync_jobs(added)
         except Exception:
-            log.warning("dashboard sync failed for %s:\n%s", src["key"], traceback.format_exc())
-    _set_status(src["key"], jobs=len(jobs), added=len(added))
-    totals["items"] += len(items)
+            log.warning("dashboard sync failed for %s:\n%s", key, traceback.format_exc())
+    if not key.startswith("_"):     # a source (the waiting room has its own summary)
+        _set_status(key, added=len(added))
     totals["jobs"] += len(jobs)
     totals["added"] += len(added)
-    totals["ai_used"] = totals["ai_used"] or any(r is not None for r in ai_results)
     if added:
         # Fill specialty/skills the rules missed before matching, so these jobs can alert
         try:
             enrich.enrich_jobs(added, ENRICH_BEFORE_ALERT)
         except Exception:
-            log.warning("enrichment failed for %s:\n%s", src["key"], traceback.format_exc())
+            log.warning("enrichment failed for %s:\n%s", key, traceback.format_exc())
         totals["sent"] += notifier.notify_new_jobs(added, sent_per_user)
         if config.ON_CI:
             catalog.remember_recent(added)   # searchable on Vercel right away (before the next deploy)
         bot.submit_new_jobs(added)  # Telegram bot alerts + feeds, sent from the bot's own thread
+
+
+def _process_waiting(fast, totals, sent_per_user):
+    """Jobs waiting for their original link: moved out of the stored jobs (once), opened first
+    in every run, and added (with alerts) as soon as their link is found."""
+    moved = waiting.take_from_store()
+    if moved and config.DATABASE_URL:
+        try:   # the dashboard counts them as waiting now, not as stored jobs
+            analytics.forget_jobs([j["id"] for j in moved])
+        except Exception:
+            log.warning("dashboard cleanup failed:\n%s", traceback.format_exc())
+    origin.RUN_BUDGET["until"] = 0.0
+    ready, stats = waiting.process(waiting.deadline_seconds(fast))
+    totals["origin_found"] = stats["resolved"]
+    totals["origin_dropped"] = stats["dropped"]
+    if ready:
+        _add_jobs("_waiting", ready, totals, sent_per_user)
 
 
 def run_all(only=None, fast=False):
@@ -295,6 +340,11 @@ def run_all(only=None, fast=False):
             except Exception:
                 log.warning("helper origin links failed:\n%s", traceback.format_exc())
         sent_per_user = {}  # one alert budget per user for the whole run
+        if not only:
+            try:   # first, before any source: jobs waiting for their original link (top priority)
+                _process_waiting(fast, totals, sent_per_user)
+            except Exception:
+                log.warning("waiting room failed:\n%s", traceback.format_exc())
         # opening relay pages for their original links: at most this long per run (all sources together)
         origin.RUN_BUDGET["until"] = time.time() + (ORIGIN_FAST_SECONDS if fast else ORIGIN_FULL_SECONDS)
         for src in sources:
@@ -339,12 +389,11 @@ def run_all(only=None, fast=False):
             elif src.get("_helper_consumed") is not None:
                 _helper_done(src)
 
-        if not fast and not only:
-            try:  # jobs stored before their original link was known
-                totals["origin_backfill"] = origin.backfill_stored()
-            except Exception:
-                log.warning("origin backfill failed:\n%s", traceback.format_exc())
         if not fast:
+            try:  # stored jobs without an employer: the AI reads the whole ad for it
+                totals["companies"] = enrich.backfill_companies(COMPANY_BACKFILL)
+            except Exception:
+                log.warning("company backfill failed:\n%s", traceback.format_exc())
             try:  # older jobs the rules left as "أخرى" / without skills, newest first, within budget
                 totals["enriched"] = enrich.backfill(ENRICH_BACKFILL)
             except Exception:
@@ -357,9 +406,11 @@ def run_all(only=None, fast=False):
 
         summary = {"status": "done", "sources": len(sources), "items": totals["items"],
                    "origin_from_helper": totals.get("origin_from_helper", 0),
-                   "origin_backfill": totals.get("origin_backfill", 0),
+                   "origin_found": totals.get("origin_found", 0), "origin_dropped": totals.get("origin_dropped", 0),
+                   "held": totals.get("held", 0),
                    "jobs": totals["jobs"], "added": totals["added"], "notified_users": sum(1 for n in sent_per_user.values() if n),
                    "ai_used": totals["ai_used"], "enriched": totals.get("enriched", 0),
+                   "companies": totals.get("companies", 0),
                    "seconds": round(time.time() - started, 1), "finished_at": storage.now_iso()}
         if fast:
             summary["fast"] = True

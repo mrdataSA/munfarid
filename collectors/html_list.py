@@ -11,7 +11,8 @@ A source in sources.json describes where the job cards are:
    "summary": {...} | "self",                     # "self" = all text in the card
    "fixed_company": "...", "fixed_city": "...",
    "render": true, "wait_selector": "css"}       # optional: JS-built page via Playwright
-Any field spec may carry "attr" to read an attribute instead of the text.
+Any field spec may carry "attr" to read an attribute instead of the text, and "strip" (a prefix
+removed from the value, e.g. "شعار " from a logo's alt text).
 
 Paging (big boards): "page_url": "https://.../jobs?page={page}" (or a list of such patterns, one per
 section), "pages": N reads the
@@ -39,9 +40,11 @@ def _value(card, spec):
     node = _node(card, spec)
     if not node:
         return ""
-    if isinstance(spec, dict) and spec.get("attr"):
-        return node.attrs.get(spec["attr"], "").strip()
-    return node.text()
+    value = node.attrs.get(spec["attr"], "").strip() if isinstance(spec, dict) and spec.get("attr") else node.text()
+    prefix = spec.get("strip") if isinstance(spec, dict) else ""
+    if prefix and value.startswith(prefix):
+        value = value[len(prefix):].strip()
+    return value
 
 
 def parse_list(html_text, source, page_url):

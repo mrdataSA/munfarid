@@ -158,6 +158,10 @@ def merge_collected(new_jobs):
             if existing:
                 if job.get("apply_url") and not existing.get("apply_url") and existing["source"] == job["source"]:
                     existing["apply_url"] = job["apply_url"]
+                if normalize.company_known(job.get("company")) and not normalize.company_known(existing.get("company")):
+                    existing["company"] = job["company"]       # the employer, learned later (same id kept)
+                if job.get("city") and not existing.get("city"):
+                    existing["city"] = job["city"]
                 if existing["source"] != job["source"]:
                     also = existing.setdefault("also_on", [])
                     if job["source"] not in also and len(also) < 8:
@@ -216,6 +220,16 @@ def set_apply_links(links):
                             j["via_jadarat"] = True
                         break
     return changed
+
+
+def original_links_by_url():
+    """Stored jobs: canonical relay/ad URL -> the original link already known for it."""
+    out = {}
+    for j in storage.read("jobs"):
+        link = normalize.original_link(j)
+        if link and j.get("url"):
+            out.setdefault(normalize.canonical_url(j["url"]), link)
+    return out
 
 
 def find(job_id):

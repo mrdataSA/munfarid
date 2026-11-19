@@ -101,6 +101,22 @@
 
       <!-- Sources -->
       <section id="page-sources" class="page" hidden>
+        <article class="card">
+          <h3>كل مصادري <span id="cat-total" class="muted small"></span></h3>
+          <div class="cat-tiles" id="cat-tiles"></div>
+          <div class="cat-filters">
+            <input id="cat-q" type="search" placeholder="ابحث عن مصدر: جهة، شركة، قناة، موقع…">
+            <select id="cat-state" aria-label="الحالة">
+              <option value="">كل الحالات</option>
+              <option value="working">تعمل الآن</option>
+              <option value="problem">متعثرة</option>
+              <option value="disabled">معطّلة أو متوقفة</option>
+              <option value="helper">تحتاج جهازي</option>
+            </select>
+            <span id="cat-count" class="chip"></span>
+          </div>
+          <div class="table-wrap cat-wrap"><table class="table" id="cat-table"></table></div>
+        </article>
         <div class="kpis" id="src-kpis"></div>
         <div class="grid-2">
           <article class="card"><h3>جهازي (المساعد السعودي)</h3><div id="helper-card"></div></article>

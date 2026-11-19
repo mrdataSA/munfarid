@@ -601,6 +601,112 @@ def api_admin_owner_link(h):
     return ok({"link": f"https://t.me/{config.TELEGRAM_BOT_USERNAME}?start=owner_{owner.new_owner_link()}"})
 
 
+# ---------------------------------------------------------------- the Saudi helper (Raed's PC)
+# The helper sends its key in "X-Helper-Key" (no cookies, no browser). It reads the cloud's source
+# status and the relay pages waiting for it, and hands back what it fetched. Only these few writes
+# are possible with the key: it never sees subscribers, sessions or anything else.
+
+HELPER_BATCHES_MAX = 60
+ORIGIN_INBOX = "_origin"   # = collectors.origin.INBOX_KEY (collectors/*.py are not deployed to Vercel)
+
+
+HELPER_NEVER = ("linkedin", "x")   # = collectors.runner.HELPER_NEVER
+
+
+def _helper_may_fetch(src):
+    """The same rule as collectors.runner.helper_can_fetch: marked for the helper, or refused by
+    the cloud with a 403 / challenge (never LinkedIn or X, never a 429)."""
+    if src.get("cloud") == "helper":
+        return True
+    st = storage.read("sources_status").get(src.get("key")) or {}
+    return (st.get("status") == "blocked" and src.get("type") not in HELPER_NEVER and src.get("key") not in HELPER_NEVER
+            and src.get("helper") is not False and "429" not in str(st.get("message") or ""))
+
+
+HELPER_ITEM_FIELDS = {"title": 300, "url": 1000, "apply_url": 1000, "company": 200, "city": 100, "posted_date": 40,
+                      "raw_text": 6000, "salary": 100, "source": 120}
+
+
+def _helper_item(it):
+    """One job from the helper, reduced to plain text fields; links must be http(s)."""
+    out = {k: str(it.get(k) or "")[:n] for k, n in HELPER_ITEM_FIELDS.items() if it.get(k)}
+    for k in ("url", "apply_url"):
+        if out.get(k) and not out[k].lower().startswith(("http://", "https://")):
+            out.pop(k)
+    if it.get("needs_ai") is True:
+        out["needs_ai"] = True
+    return out if out.get("title") else None
+
+
+def _helper(h):
+    key = "helper:" + h.client_ip()
+    if auth.login_limiter.blocked(key):
+        raise ApiError(429, "too many attempts")
+    if not owner.helper_key_ok(h.headers.get("X-Helper-Key") or ""):
+        auth.login_limiter.fail(key)
+        raise ApiError(401, "bad helper key")
+
+
+@route("GET", "/api/helper/work")
+def api_helper_work(h):
+    _helper(h)
+    box = storage.read("inbox").get(ORIGIN_INBOX) or {}
+    status = {k: v for k, v in storage.read("sources_status").items() if not k.startswith("_")}
+    return ok({"sources_status": status, "pending": list(box.get("pending") or [])})
+
+
+@route("POST", "/api/helper/batch")
+def api_helper_batch(h):
+    _helper(h)
+    b = h.body()
+    key, batch = b.get("key"), b.get("batch")
+    src = next((s for s in analytics.sources_config() if s.get("key") == key), None)
+    if not src or not _helper_may_fetch(src) or not isinstance(batch, dict) or not isinstance(batch.get("items"), list):
+        raise ApiError(400, "bad batch")
+    items = [_helper_item(it) for it in batch["items"][:5000] if isinstance(it, dict)]
+    # filter_jobs always comes from sources.json (the cloud's own setting), never from the PC
+    batch = {"at": str(batch.get("at") or storage.now_iso())[:60], "items": [it for it in items if it],
+             "note": str(batch.get("note") or "")[:300], "filter_jobs": None}
+    with storage.edit("inbox") as inbox:
+        box = inbox.setdefault(key, {"batches": []})
+        box["batches"] = [x for x in box.get("batches") or [] if x.get("at") != batch["at"]][-(HELPER_BATCHES_MAX - 1):] + [batch]
+    return ok({"stored": len(batch["items"])})
+
+
+@route("POST", "/api/helper/origin")
+def api_helper_origin(h):
+    _helper(h)
+    b = h.body()
+    tried = {u for u in (b.get("tried") or [])[:2000] if isinstance(u, str)}
+    done = b.get("done") if isinstance(b.get("done"), dict) else {}
+    with storage.edit("inbox") as inbox:
+        box = inbox.setdefault(ORIGIN_INBOX, {})
+        asked = set(box.get("pending") or [])
+        # only pages the cloud asked for, and only real links
+        done = {u: (l if isinstance(l, str) and l.lower().startswith(("http://", "https://", "mailto:")) else "")[:1000]
+                for u, l in list(done.items())[:2000] if u in asked}
+        tried &= asked
+        box["pending"] = [u for u in box.get("pending") or [] if u not in tried]
+        box["done"] = dict(box.get("done") or {}, **done)
+    return ok({"done": sum(1 for v in done.values() if v)})
+
+
+@route("POST", "/api/helper/report")
+def api_helper_report(h):
+    _helper(h)
+    r = h.body().get("report")
+    if not isinstance(r, dict):
+        raise ApiError(400, "bad report")
+    report = {"at": str(r.get("at") or storage.now_iso())[:40], "minutes": r.get("minutes"),
+              "origin_links": r.get("origin_links") if isinstance(r.get("origin_links"), int) else 0,
+              "sources": {str(k)[:40]: (v if isinstance(v, int) else str(v)[:120])
+                          for k, v in (r.get("sources") or {}).items()} if isinstance(r.get("sources"), dict) else {},
+              "host": str(r.get("host") or "")[:60], "error": str(r.get("error") or "")[:300]}
+    with storage.edit("bot_state") as st:
+        st["helper_last"] = report
+    return ok()
+
+
 # ---------------------------------------------------------------- owner dashboard
 
 NONE_VALUE = "__none__"   # the dashboard's value for "not stated" (an empty city or source)
@@ -613,6 +719,7 @@ def _list(q, key):
 def _job_filter(q):
     return {"q": (q.get("q") or [""])[0][:100], "cities": _list(q, "city"), "exp": _list(q, "exp"),
             "sources": _list(q, "source"), "kinds": _list(q, "kind"), "status": _list(q, "status") or ["live"],
+            "companies": set(_list(q, "company")),
             "from": (q.get("from") or [""])[0][:10], "to": (q.get("to") or [""])[0][:10],
             "helper": (q.get("helper") or [""])[0] == "1", "jadarat": (q.get("jadarat") or [""])[0] == "1",
             "sort": "resolved" if (q.get("sort") or [""])[0] == "resolved" else ""}
@@ -639,6 +746,18 @@ def api_dash_jobs(h):
 def api_dash_sources(h):
     h.admin()
     return ok(analytics.sources_report())
+
+
+@route("GET", "/api/admin/dash/catalog")
+def api_dash_catalog(h):
+    h.admin()
+    return ok(analytics.sources_catalog())
+
+
+@route("GET", "/api/admin/dash/waiting")
+def api_dash_waiting(h):
+    h.admin()
+    return ok(analytics.waiting_summary())
 
 
 @route("GET", "/api/admin/dash/users")

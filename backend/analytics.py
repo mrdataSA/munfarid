@@ -68,8 +68,9 @@ JOB_COLS = ("id", "title", "company", "city", "specialty", "source", "contract_t
 LINK_KINDS = {
     "direct": "مباشر من المصدر",
     "relay_resolved": "تخطّينا الإعلانات وجبنا الرابط الأصلي",
-    "relay_pending": "بانتظار الرابط الأصلي (مخفية في البوت)",
+    "relay_pending": "بانتظار الرابط الأصلي (لم تُضف بعد)",
 }
+WAITING = "waiting"   # link_kind of a row whose job went back to the waiting room (collectors/waiting.py)
 EXP_BUCKETS = ("حديث تخرج (0-1)", "1-3 سنوات", "3-7 سنوات", "أكثر من 7", "غير مذكورة")
 
 
@@ -181,6 +182,7 @@ on conflict (id) do update set title = excluded.title, company = excluded.compan
   specialty = excluded.specialty, link_kind = excluded.link_kind, link_host = excluded.link_host,
   url = excluded.url, apply_url = excluded.apply_url, via_jadarat = excluded.via_jadarat,
   via_helper = rizq.jobs_all.via_helper or excluded.via_helper, exp_years = excluded.exp_years,
+  archived = case when rizq.jobs_all.link_kind = 'waiting' then false else rizq.jobs_all.archived end,
   resolved_at = case when excluded.link_kind <> 'relay_resolved' then null
                      else coalesce(rizq.jobs_all.resolved_at, now()) end,
   last_seen = now(), updated_at = now()
@@ -208,6 +210,18 @@ def sync_jobs(jobs, touch=False):
                     "interval '20 hours' then now() else updated_at end where id = any(cast(:ids as text[]))",
                     ids=ids[i:i + 5000])
     return len(jobs)
+
+
+def forget_jobs(ids):
+    """Jobs moved back to the waiting room (no original link yet): out of every report until they
+    are added again (the upsert then brings the row back)."""
+    if not _db() or not ids:
+        return 0
+    ids = list(ids)
+    for i in range(0, len(ids), 5000):
+        _pg()._run("update rizq.jobs_all set link_kind = 'waiting', archived = true, updated_at = now() "
+                   "where id = any(cast(:ids as text[]))", ids=ids[i:i + 5000])
+    return len(ids)
 
 
 def archive_old(days=ARCHIVE_DAYS):
@@ -257,11 +271,20 @@ def jobs_rows(max_age=5.0):
         new = dict(_jobs["rows"])
         for r in rows or []:
             d = {c: _iso(v) for c, v in zip(JOB_COLS, r)}
-            new[d["id"]] = d
+            if d["link_kind"] == WAITING:
+                new.pop(d["id"], None)
+            else:
+                new[d["id"]] = d
             if _jobs["hw"] is None or r[-1] > _jobs["hw"]:
                 _jobs["hw"] = r[-1]
         _jobs["rows"], _jobs["at"] = new, time.time()
         return new
+
+
+def waiting_summary():
+    """The waiting room (jobs not added until their original link is found), from the collector."""
+    w = storage.read("sources_status").get("_origin_wait")
+    return w if isinstance(w, dict) else {}
 
 
 def job_row(job_id):
@@ -364,6 +387,101 @@ def sources_config():
         return []
 
 
+# ---------------------------------------------------------------- every source, one by one
+
+CATEGORIES = ("جهات حكومية", "شركات (توظيف مباشر)", "منصات توظيف", "مواقع ناقلة", "قنوات تيليجرام",
+              "منصات تواصل", "برامج تدريب")
+SOURCE_CATEGORY = {
+    "jadarat": "منصات توظيف", "sabbar": "منصات توظيف", "tanqeeb": "منصات توظيف", "linkedin": "منصات توظيف",
+    "careerjet": "منصات توظيف", "jooble": "منصات توظيف", "rizqsa": "منصات توظيف",
+    "saudijobs24": "مواقع ناقلة", "wzaifs": "مواقع ناقلة", "jadaratnews": "مواقع ناقلة", "linkedksa": "مواقع ناقلة",
+    "almowaten": "مواقع ناقلة", "wdeftksa": "مواقع ناقلة", "ewdifh": "مواقع ناقلة",
+    "telegram": "قنوات تيليجرام", "x": "منصات تواصل", "programs_watch": "برامج تدريب",
+}
+GROUP_CATEGORY = {"gov": "جهات حكومية", "company": "شركات (توظيف مباشر)"}
+METHOD = {"rss": "RSS", "html": "صفحات الموقع", "telegram": "تيليجرام (قناة عامة)", "linkedin": "LinkedIn (بإذن مكتوب)",
+          "careerjet": "API رسمي", "jooble": "API رسمي", "x": "X API الرسمي", "jadarat": "بوابة جدارات",
+          "programs_watch": "الصفحات الرسمية", "ats": "بوابة التوظيف"}
+ATS_LABEL = {"workable": "Workable", "greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby",
+             "sf_csb": "SAP SuccessFactors", "oracle": "Oracle Cloud", "recruitee": "Recruitee", "pinpoint": "Pinpoint",
+             "smartrecruiters": "SmartRecruiters", "rendered": "صفحة الوظائف (متصفح)", "jsonld": "صفحة الوظائف",
+             "html": "صفحة الوظائف", "rss": "RSS"}
+
+
+def _employers():
+    try:
+        with open(config.ROOT + "/collectors/employers.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def _channels():
+    try:
+        with open(config.ROOT + "/collectors/channels.txt", "r", encoding="utf-8") as f:
+            return [ln.strip().lstrip("@") for ln in f if ln.strip() and not ln.strip().startswith("#")]
+    except OSError:
+        return []
+
+
+def _site(url):
+    url = str(url or "")
+    return url if url.startswith(("http://", "https://")) else ""
+
+
+def sources_catalog():
+    """Every place jobs come from, one row each: the big boards, every company and government
+    portal, every Telegram channel. With its category, how we read it, its state and live jobs."""
+    rows = jobs_rows()
+    live = live_ids()
+    status = storage.read("sources_status")
+    live_src = Counter(r.get("source") or "" for r in rows.values() if r["id"] in live)
+    employers = _employers()
+    out = []
+    for s in sources_config():
+        st = status.get(s.get("key")) or {}
+        on = s.get("enabled", True)
+        state = st.get("status") or ("" if on else "disabled")
+        group = s.get("group")
+        if s.get("type") == "ats" and group in GROUP_CATEGORY:
+            failed = str(st.get("message") or "")
+            for e in employers:
+                if e.get("group", "company") != group:
+                    continue
+                e_on = on and e.get("enabled", True)
+                e_state = "disabled" if not e_on else ("error" if f"{e['name']}:" in failed else (state or ""))
+                label = e.get("source_label") or e["name"]     # = the jobs' "source" (collectors/ats.py)
+                out.append({"name": e["name"], "name_en": e.get("name_en", ""), "category": GROUP_CATEGORY[group],
+                            "method": ATS_LABEL.get(e.get("ats"), e.get("ats") or ""), "via": s["name"],
+                            "url": _site(e.get("url") or e.get("job_base") or (f"https://{e['host']}" if e.get("host") else "")),
+                            "status": e_state, "note": e.get("_why_disabled", ""), "jobs_source": label,
+                            "company": "", "live": live_src.get(label, 0),
+                            "needs_helper": False, "last_run": st.get("last_run", "")})
+            continue
+        if s.get("type") == "telegram":
+            for h in _channels():
+                out.append({"name": "@" + h, "name_en": "", "category": "قنوات تيليجرام", "method": METHOD["telegram"],
+                            "via": s["name"], "url": f"https://t.me/s/{h}", "status": state if on else "disabled",
+                            "note": "", "jobs_source": s["name"], "company": "", "live": None, "needs_helper": False,
+                            "last_run": st.get("last_run", "")})
+            continue
+        url = s.get("url") or s.get("page_url") or s.get("feed") or ""
+        if isinstance(url, list):
+            url = url[0] if url else ""
+        url = str(url).replace("{page}", "1")
+        out.append({"name": s["name"], "name_en": "", "category": SOURCE_CATEGORY.get(s["key"], "منصات توظيف"),
+                    "method": METHOD.get(s.get("type"), s.get("type", "")), "via": "", "url": _site(url),
+                    "status": state, "note": st.get("message", ""), "jobs_source": s["name"], "company": "",
+                    "live": live_src.get(s["name"], 0),
+                    "needs_helper": s.get("cloud") == "helper" or st.get("status") == "blocked",
+                    "last_run": st.get("last_run", "")})
+    cats = Counter(r["category"] for r in out)
+    working = Counter(r["category"] for r in out if r["status"] not in ("disabled", "skipped", "error", "blocked", "disallowed"))
+    return {"sources": out, "total": len(out),
+            "working": sum(1 for r in out if r["status"] not in ("disabled", "skipped", "error", "blocked", "disallowed")),
+            "categories": [{"name": c, "count": cats.get(c, 0), "working": working.get(c, 0)} for c in CATEGORIES if cats.get(c)]}
+
+
 # ---------------------------------------------------------------- reports
 
 def bot_status():
@@ -450,6 +568,8 @@ def overview():
     status = Counter(job_status(r, live) for r in rows.values())
     live_rows = [r for r in rows.values() if r["id"] in live]
     kinds = Counter(r["link_kind"] for r in live_rows)
+    wait = waiting_summary()
+    kinds["relay_pending"] = wait.get("count", 0)
     users, feeds = _subs()
     subscribed = [s for s in users if s.get("titles") and s.get("mode") in ("daily", "instant")]
     ev_today = [e for e in events if _day(e["ts"]) == today]
@@ -463,6 +583,7 @@ def overview():
                  "week": week, "week_change": _pct(week, prev_week), "expired": status.get("expired", 0),
                  "archived": status.get("archived", 0), "all": len(rows),
                  "kinds": {k: kinds.get(k, 0) for k in LINK_KINDS},
+                 "waiting": {k: wait.get(k, 0) for k in ("count", "resolved_today", "dropped_today", "for_helper")},
                  "via_helper": sum(1 for r in live_rows if r.get("via_helper")),
                  "via_jadarat": sum(1 for r in live_rows if r.get("via_jadarat")),
                  "per_day": _series(30, added)},
@@ -512,6 +633,8 @@ def filter_jobs(f):
         if cities and r.get("city") not in cities:
             continue
         if srcs and r.get("source") not in srcs:
+            continue
+        if f.get("companies") and r.get("company") not in f["companies"]:
             continue
         if kinds and r.get("link_kind") not in kinds:
             continue
@@ -569,6 +692,9 @@ def sources_report():
             p["via_jadarat"] += bool(r.get("via_jadarat"))
             p["cities"][r.get("city") or ""] += 1
     by_key = {s["key"]: s for s in sources_config()}
+    wait = waiting_summary()
+    for name, n in (wait.get("by_source") or {}).items():
+        per[name or ""]["relay_pending"] = n
     out = []
     for name, p in per.items():
         s = cfg.get(name) or {}
@@ -586,7 +712,9 @@ def sources_report():
     live_rows = [r for r in rows.values() if r["id"] in live]
     helper = _helper_named(storage.read("bot_state").get("helper_last"))
     return {"sources": out, "collectors": sorted(st_rows, key=lambda x: x["name"]),
-            "kinds": {k: sum(1 for r in live_rows if r["link_kind"] == k) for k in LINK_KINDS},
+            "kinds": dict({k: sum(1 for r in live_rows if r["link_kind"] == k) for k in LINK_KINDS},
+                          relay_pending=wait.get("count", 0)),
+            "waiting": {k: v for k, v in wait.items() if k != "items"},
             "via_helper": sum(1 for r in live_rows if r.get("via_helper")),
             "via_helper_all": sum(1 for r in rows.values() if r.get("via_helper")),
             "via_jadarat": sum(1 for r in live_rows if r.get("via_jadarat")),

@@ -1,8 +1,8 @@
 @echo off
-rem Saudi helper (see tools/saudi_helper.py). Windows Task Scheduler runs this once a day.
+rem Saudi helper by hand (the daily task runs .venv\Scripts\pythonw.exe tools\saudi_helper.py directly).
+rem The script finds its key in %USERPROFILE%\.munfarid by itself. Add --minutes 5 for a short test.
 cd /d "%~dp0.."
-set /p DATABASE_URL=<"%USERPROFILE%\.munfarid\database_url"
 set PYTHONUTF8=1
 set PY=.venv\Scripts\python.exe
-if not exist "%PY%" set PY=%LOCALAPPDATA%\Programs\Python\Python311\python.exe
-"%PY%" tools\saudi_helper.py >nul 2>&1
+if not exist "%PY%" set PY=python
+"%PY%" tools\saudi_helper.py %*

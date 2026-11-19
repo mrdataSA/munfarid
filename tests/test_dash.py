@@ -119,7 +119,8 @@ try:
     s, d, _ = adm.req("GET", "/api/admin/dash/overview")
     j, p = d.get("jobs", {}), d.get("people", {})
     check("overview: job counts", s == 200 and j["live"] == 4 and j["today"] == 2 and j["all"] == 4, j)
-    check("overview: link kinds", j["kinds"] == {"direct": 2, "relay_resolved": 1, "relay_pending": 1}, j["kinds"])
+    check("overview: link kinds (waiting ones come from the waiting room)",
+          j["kinds"] == {"direct": 2, "relay_resolved": 1, "relay_pending": 0}, j["kinds"])
     check("overview: fetched by my PC counted", j["via_helper"] == 1)
     check("overview: people (tried, subscribed, feeds)", p["tried"] >= 2 and p["subscribers"] == 2 and p["feeds"] == 1, p)
     check("overview: 30-day series", len(j["per_day"]) == 30 and j["per_day"][-1]["n"] == 2)
@@ -213,6 +214,49 @@ try:
     check("ticket: approved -> logged in", d.get("state") == "approved"
           and anon.req("GET", "/api/admin/whoami")[1]["logged_in"])
     check("ticket: used once", owner.check_ticket(ticket) == "expired")
+    # every source, one by one
+    s, d, _ = anon.req("GET", "/api/admin/dash/catalog")
+    cats = {c["name"] for c in d.get("categories", [])}
+    check("catalog: every company, government body and channel listed", s == 200 and d["total"] > 150
+          and {"جهات حكومية", "شركات (توظيف مباشر)", "قنوات تيليجرام", "مواقع ناقلة"} <= cats, (s, d.get("total"), cats))
+    check("catalog: rows carry category, method and state", all({"name", "category", "method", "status"} <= set(r)
+                                                                for r in d["sources"]))
+    s, d, _ = anon.req("GET", "/api/admin/dash/waiting")
+    check("waiting room: readable", s == 200)
+    # the Saudi helper talks to the site with its own key (no database password on the PC)
+    hk = "k" * 40
+    owner.set_helper_key(hk)
+    helper = Client(base)
+    s, _, _ = helper.req("GET", "/api/helper/work")
+    check("helper API: no key, no work", s == 401)
+    def hreq(method, path, body=None):
+        req = urllib.request.Request(base + path, method=method, data=json.dumps(body).encode() if body is not None else None,
+                                     headers={"X-Helper-Key": hk, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return json.loads(r.read().decode())
+    with storage.edit("inbox") as ib:
+        ib["_origin"] = {"pending": ["https://relay.example/1", "https://relay.example/2"]}
+    wk = hreq("GET", "/api/helper/work")
+    check("helper API: work = source status + waiting relay pages", "sources_status" in wk and len(wk["pending"]) == 2)
+    hreq("POST", "/api/helper/batch", {"key": "jadarat", "batch": {"at": "2026-11-19T04:00:00+03:00", "items": [{"title": "x"}]}})
+    hreq("POST", "/api/helper/origin", {"tried": ["https://relay.example/1"], "done": {"https://relay.example/1": "https://emp.example/j",
+                                                                                  "https://not-asked.example/x": "https://evil.example"}})
+    hreq("POST", "/api/helper/report", {"report": {"at": "2026-11-19T04:50:00+03:00", "sources": {"jadarat": 1}, "minutes": 50}})
+    ib = storage.read("inbox")
+    check("helper API: batch, links and report stored", ib["jadarat"]["batches"][-1]["items"] == [{"title": "x"}]
+          and ib["_origin"]["pending"] == ["https://relay.example/2"]
+          and ib["_origin"]["done"] == {"https://relay.example/1": "https://emp.example/j"}
+          and storage.read("bot_state")["helper_last"]["sources"] == {"jadarat": 1})
+    try:
+        hreq("POST", "/api/helper/batch", {"key": "sabbar", "batch": {"items": [{"title": "x"}]}})
+        check("helper API: not for sources the cloud reads itself", False)
+    except urllib.error.HTTPError as e:
+        check("helper API: not for sources the cloud reads itself", e.code == 400)
+    try:
+        hreq("POST", "/api/helper/batch", {"key": "subscribers", "batch": {"items": []}})
+        check("helper API: only real sources", False)
+    except urllib.error.HTTPError as e:
+        check("helper API: only real sources", e.code == 400)
     # the login is logged with no person: every page must still load (it broke the home page once)
     for path in ("overview", "users", "sources", "live", "jobs"):
         check(f"after a Telegram login: {path} loads", anon.req("GET", "/api/admin/dash/" + path)[0] == 200)

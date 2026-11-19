@@ -10,7 +10,7 @@
   const KIND_LABEL = {
     direct: 'مباشر من المصدر',
     relay_resolved: 'تخطّينا الإعلانات وجبنا الأصلي',
-    relay_pending: 'بانتظار الرابط الأصلي (مخفية)'
+    relay_pending: 'بانتظار الرابط الأصلي (لم تُضف بعد)'
   };
   const STATUS_LABEL = { live: 'حالية', expired: 'منتهية', archived: 'أرشيف' };
   const nf = new Intl.NumberFormat('en-US');
@@ -134,8 +134,13 @@
     el.innerHTML = '<div class="stack">' + keys.filter((k) => kinds[k]).map((k) =>
       `<span class="k-${k}" style="width:${(kinds[k] / total) * 100}%" title="${esc(KIND_LABEL[k])}: ${n(kinds[k])}"></span>`).join('') +
       '</div><div class="legend">' + keys.map((k) =>
-      `<button class="row drill-link" type="button" ${drillAttr(KIND_LABEL[k], { kind: k, sort: k === 'relay_resolved' ? 'resolved' : '' })}>` +
+      `<button class="row drill-link" type="button" ${drillAttr(KIND_LABEL[k], kindParams(k))}>` +
       `<span class="sw k-${k}"></span>${esc(KIND_LABEL[k])}<span class="val">${n(kinds[k])} · ${Math.round(((kinds[k] || 0) / total) * 100)}%</span></button>`).join('') + '</div>';
+  }
+  // Jobs waiting for their original link are not stored yet: they open the waiting room instead
+  function kindParams(k) {
+    if (k === 'relay_pending') return { waiting: '1' };
+    return { kind: k, sort: k === 'relay_resolved' ? 'resolved' : '' };
   }
   function kpi(label, value, sub, cls) {
     return `<div class="kpi"><div class="k-label">${esc(label)}</div><div class="k-value">${value}</div>` +
@@ -243,9 +248,13 @@
       (w.last_error ? ` · آخر خطأ: ${esc(w.last_error)}` : '');
     const helper = b.helper || {};
     const got = Object.entries(helper.sources || {}).map(([k, v]) => `${k}: ${typeof v === 'number' ? n(v) : v}`).join('، ');
+    const helperBadge = helper.error ? badge('bad', 'تعثّر') :
+      badge(b.helper_ok ? 'good' : (helper.at ? 'warn' : 'idle'), b.helper_ok ? 'يعمل' : (helper.at ? 'متأخر' : 'لم يبدأ'));
+    const helperSub = helper.error ? `آخر محاولة ${ago(helper.at)} · ${esc(helper.error)}` :
+      helper.at ? 'آخر تشغيل ' + ago(helper.at) + (got ? ' · ' + esc(got) : '') : 'لم يشتغل بعد على جهازك';
     return `<div class="status">${badge(...botState)}<div><b>البوت</b><span class="muted small">${botSub}</span></div></div>` +
       `<div class="status">${badge(b.cloud_ok ? 'good' : 'bad', b.cloud_ok ? 'يعمل' : 'متأخر')}<div><b>الجمع السحابي (كل ساعة)</b><span class="muted small">آخر تشغيل ${ago(b.cloud_last_run)}</span></div></div>` +
-      `<div class="status">${badge(b.helper_ok ? 'good' : (helper.at ? 'warn' : 'idle'), b.helper_ok ? 'يعمل' : (helper.at ? 'متأخر' : 'لم يبدأ'))}<div><b>جهازي (مرة يومياً)</b><span class="muted small">${helper.at ? 'آخر تشغيل ' + ago(helper.at) + (got ? ' · ' + esc(got) : '') : 'لم يشتغل بعد على الجهاز القديم'}</span></div></div>`;
+      `<div class="status">${helperBadge}<div><b>جهازي (مرة يومياً 4 الفجر)</b><span class="muted small">${helperSub}</span></div></div>`;
   }
 
   async function loadHome() {
@@ -377,19 +386,23 @@
 
   // ---------------------------------------------------------------- sources page
   async function loadSources() {
-    const d = await api('GET', '/api/admin/dash/sources');
+    const [d, cat] = await Promise.all([api('GET', '/api/admin/dash/sources'), api('GET', '/api/admin/dash/catalog')]);
+    renderCatalog(cat);
     const k = d.kinds;
+    const w = d.waiting || {};
     const needs = d.helper_sources.length;
     $('#src-kpis').innerHTML =
       kpiDrill('مباشرة من المصدر', n(k.direct), 'بوابات الجهات والشركات والمنصات الأصلية', 'وظائف روابطها مباشرة من المصدر', { kind: 'direct' }) +
       kpiDrill('تخطّينا إعلاناتها', n(k.relay_resolved), 'دخلنا الموقع الناقل وجبنا رابط صاحب الوظيفة', 'تخطّينا إعلاناتها: الرابط قبل وبعد', { kind: 'relay_resolved', sort: 'resolved' }) +
-      kpiDrill('بانتظار الرابط الأصلي', n(k.relay_pending), 'مخفية في البوت حتى نجد رابطها', 'بانتظار الرابط الأصلي', { kind: 'relay_pending' }) +
+      kpiDrill('بانتظار الرابط الأصلي', n(k.relay_pending), `لم تُضف بعد · وجدنا اليوم ${n(w.resolved_today)} · حُذفت ${n(w.dropped_today)}` +
+        (w.for_helper ? ` · لجهازي ${n(w.for_helper)}` : ''), 'بانتظار الرابط الأصلي (لم تُضف بعد)', { waiting: '1' }) +
       kpiDrill('جابها جهازي', n(d.via_helper), `منذ البداية: ${n(d.via_helper_all)} · مصادر تحتاجه: ${n(needs)}`, 'وظائف جابها جهازي', { helper: '1', status: ALL_STATUS });
     const h = d.helper || {};
-    $('#helper-card').innerHTML = h.at ?
+    $('#helper-card').innerHTML = h.error ?
+      `<p>${badge('bad', 'تعثّر')} آخر محاولة <b>${ago(h.at)}</b>: ${esc(h.error)}</p>` : h.at ?
       `<p>آخر تشغيل <b>${ago(h.at)}</b> (${esc(h.minutes)} دقيقة)، روابط أصلية فتحها: <b>${n(h.origin_links)}</b></p>` +
       '<div class="hbars">' + Object.entries(h.sources || {}).map(([s, v]) => `<div class="hbar"><span class="lbl">${esc(s)}</span><span class="muted">${typeof v === 'number' ? n(v) + ' وظيفة' : esc(v)}</span><span></span></div>`).join('') + '</div>'
-      : '<p class="empty">لم يشتغل جهازك القديم بعد. شغّل tools\\install_saudi_helper.bat عليه.</p>';
+      : '<p class="empty">لم يشتغل جهازك بعد. أول تشغيل يكون الساعة 4 الفجر.</p>';
     hbars($('#helper-sources'), d.helper_sources.map((s) => [s.source, s.live]), 'وظيفة حالية');
     table($('#src-table'), ['المصدر', 'الحالية', 'اليوم', '7 أيام', 'كل ما جُمع', 'مباشر', 'تخطّينا الإعلانات', 'بانتظار الرابط', 'عبر جهازي', 'عبر جدارات', 'أكثر المدن'],
       d.sources.map((s) => {
@@ -400,7 +413,7 @@
           cell(s.week, 'آخر 7 أيام', { status: ALL_STATUS, from: dayAgo(6) }), cell(s.all, 'كل ما جُمع', { status: ALL_STATUS }),
           cell(s.direct, 'مباشر من المصدر', { kind: 'direct' }),
           cell(s.relay_resolved, 'تخطّينا الإعلانات: الرابط قبل وبعد', { kind: 'relay_resolved', sort: 'resolved' }),
-          cell(s.relay_pending, 'بانتظار الرابط الأصلي', { kind: 'relay_pending' }), cell(s.via_helper, 'عبر جهازي', { helper: '1' }),
+          cell(s.relay_pending, 'بانتظار الرابط الأصلي', { waiting: '1' }), cell(s.via_helper, 'عبر جهازي', { helper: '1' }),
           cell(s.via_jadarat, 'أصلها جدارات', { jadarat: '1' }),
           esc(s.top_cities.map(([c, v]) => `${c || 'غير محدد'} ${v}`).join('، '))];
       }), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -409,6 +422,56 @@
       d.collectors.map((c) => [esc(c.name) + (c.needs_helper ? ' <span class="badge warn">▲ جهازي</span>' : ''),
         badge(...(st[c.status] || ['idle', c.status || '—'])), n(c.fetched), n(c.added), esc(ago(c.last_run)), `<span class="muted small">${esc(c.message)}</span>`]), [2, 3]);
   }
+
+  // ---------------------------------------------------------------- every source (catalog)
+  const CAT_STATE = {
+    ok: ['good', 'يعمل'], empty: ['warn', 'لا جديد'], blocked: ['bad', 'محجوب'], error: ['bad', 'تعثّر'],
+    disallowed: ['idle', 'ممنوع'], skipped: ['idle', 'متوقف مؤقتاً'], disabled: ['idle', 'معطّل']
+  };
+  const BAD_STATES = ['error', 'blocked', 'disallowed'];
+  const catFilter = { cat: '', state: '' };
+  let catData = null;
+  function renderCatalog(cat) {
+    catData = cat;
+    $('#cat-total').textContent = `${n(cat.total)} مصدر · يعمل منها ${n(cat.working)}`;
+    $('#cat-tiles').innerHTML = `<button type="button" class="cat-tile ${catFilter.cat ? '' : 'on'}" data-cat=""><b>${n(cat.total)}</b><span>كل المصادر</span></button>` +
+      cat.categories.map((c) => `<button type="button" class="cat-tile ${catFilter.cat === c.name ? 'on' : ''}" data-cat="${esc(c.name)}">` +
+        `<b>${n(c.count)}</b><span>${esc(c.name)}</span><small>يعمل ${n(c.working)}</small></button>`).join('');
+    drawCatalog();
+  }
+  function drawCatalog() {
+    if (!catData) return;
+    const q = $('#cat-q').value.trim().toLowerCase();
+    const rows = catData.sources.filter((s) => {
+      if (catFilter.cat && s.category !== catFilter.cat) return false;
+      if (catFilter.state === 'working' && (s.status === 'disabled' || BAD_STATES.includes(s.status) || s.status === 'skipped')) return false;
+      if (catFilter.state === 'problem' && !BAD_STATES.includes(s.status)) return false;
+      if (catFilter.state === 'disabled' && !['disabled', 'skipped'].includes(s.status)) return false;
+      if (catFilter.state === 'helper' && !s.needs_helper) return false;
+      return !q || `${s.name} ${s.name_en} ${s.category} ${s.method} ${s.via} ${s.url}`.toLowerCase().includes(q);
+    }).sort((a, b) => (b.live || 0) - (a.live || 0) || a.name.localeCompare(b.name, 'ar'));
+    $('#cat-count').textContent = `${n(rows.length)} نتيجة`;
+    table($('#cat-table'), ['المصدر', 'التصنيف', 'طريقة الجمع', 'الحالة', 'الوظائف الحالية', 'الموقع'],
+      rows.map((s) => {
+        const params = Object.assign({ source: s.jobs_source || NONE }, s.company ? { company: s.company } : {});
+        const live = s.live == null ? '<span class="muted small">ضمن القنوات</span>' : (s.live ? dl(n(s.live), s.name, params) : '0');
+        return [`<b><bdi>${esc(s.name)}</bdi></b>` + (s.name_en ? `<br><span class="muted small" dir="ltr">${esc(s.name_en)}</span>` : '') +
+            (s.via ? `<br><span class="muted small">ضمن: ${esc(s.via)}</span>` : ''),
+          esc(s.category), esc(s.method) + (s.needs_helper ? '<br><span class="badge warn">▲ عبر جهازي</span>' : ''),
+          badge(...(CAT_STATE[s.status] || ['idle', s.status || 'لم يُفحص بعد'])) + (s.note ? `<br><span class="muted small">${esc(s.note.slice(0, 90))}</span>` : ''),
+          live, s.url ? linkCell(s.url, '') : '<span class="muted">—</span>'];
+      }), [4]);
+  }
+  $('#cat-tiles').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    catFilter.cat = b.dataset.cat;
+    $$('.cat-tile', $('#cat-tiles')).forEach((x) => x.classList.toggle('on', x === b));
+    drawCatalog();
+  });
+  $('#cat-state').addEventListener('change', (e) => { catFilter.state = e.target.value; drawCatalog(); });
+  let catTimer = null;
+  $('#cat-q').addEventListener('input', () => { clearTimeout(catTimer); catTimer = setTimeout(drawCatalog, 200); });
 
   // ---------------------------------------------------------------- details dialog
   // Any number with data-drill opens the jobs behind it: source, title, the link before (the relay
@@ -445,10 +508,33 @@
       `<span class="muted">${esc(label)}</span></div>`;
   }
   let drillSeq = 0;
+  async function loadWaiting(seq) {
+    const tbl = $('#drill-table');
+    const d = await api('GET', '/api/admin/dash/waiting');
+    if (seq !== drillSeq) return;
+    const q = $('#drill-q').value.trim();
+    const items = (d.items || []).filter((r) => (!drill.params.source || r.source === drill.params.source) &&
+      (!q || `${r.title} ${r.company} ${r.source} ${r.city}`.includes(q)));
+    $('#drill-total').innerHTML = `<b>${n(d.count)}</b> وظيفة تنتظر` + (d.items && d.count > d.items.length ? ` · أحدث ${n(d.items.length)} هنا` : '');
+    table(tbl, ['الوظيفة', 'المصدر', 'المدينة', 'الرابط قبل', 'الحالة', 'تنتظر منذ', 'محاولات'],
+      items.map((r) => [`<b>${esc(r.title)}</b>${r.company ? `<br><span class="muted small">${esc(r.company)}</span>` : ''}`,
+        esc(r.source), esc(r.city || 'غير محدد'), linkCell(r.url, 'صفحة الموقع الناقل'),
+        r.for_helper ? badge('warn', 'ينتظر جهازي (يحجب السحابة)') : badge('idle', 'نفتحها في التشغيل القادم'),
+        `<span class="num">${esc(ago(r.since))}</span>`, n(r.tries)]));
+    $('#drill-pager').innerHTML = '';
+    $('#drill-export').hidden = true;
+  }
   async function loadDrill() {
     const tbl = $('#drill-table');
     const seq = ++drillSeq;
     tbl.innerHTML = '<tbody><tr><td class="empty">جارٍ التحميل…</td></tr></tbody>';
+    $('#drill-export').hidden = false;
+    if (drill.params.waiting) {
+      try { await loadWaiting(seq); } catch (e) {
+        if (seq === drillSeq && e.message !== 'login') tbl.innerHTML = `<tbody><tr><td class="empty">${esc(e.message)}</td></tr></tbody>`;
+      }
+      return;
+    }
     let d;
     try { d = await api('GET', '/api/admin/dash/jobs?' + drillQuery({ page: drill.page })); }
     catch (e) {

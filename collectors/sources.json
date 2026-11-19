@@ -155,6 +155,12 @@
     "title": {
       "tag": "h2"
     },
+    "company": {
+      "tag": "img",
+      "cls": "partner-logo",
+      "attr": "alt",
+      "strip": "شعار"
+    },
     "link": {
       "tag": "a"
     },
@@ -167,7 +173,7 @@
     "filter_jobs": false,
     "page_url": "https://sabbar.com/ar/jobs?page={page}",
     "pages": 8,
-    "backfill_pages": 12,
+    "backfill_pages": 30,
     "max_pages": 820,
     "jitter": 1.5
   },

@@ -16,7 +16,7 @@ os.environ["RIZQ_DATA_DIR"] = TMP
 sys.path.insert(0, ROOT)
 
 from backend import catalog, normalize, storage  # noqa: E402
-from collectors import base, origin, runner  # noqa: E402
+from collectors import base, html_list, origin, runner, waiting  # noqa: E402
 
 results = []
 
@@ -115,15 +115,73 @@ try:
           and job["apply_url"].startswith("https://weks.link/") and normalize.original_link(job), job.get("apply_url"))
     check("cloud: inbox entry cleared", origin.INBOX_KEY not in storage.read("inbox"))
 
-    # backfill of jobs stored before
+    # ------------------------------------------------------------ the waiting room (original links only)
     storage.write("jobs", [normalize.make_job(title="مهندس", source="ساحة الوظائف", url="https://linkedksa.com/5/",
-                                              raw_text="وظيفة مهندس")])
+                                              raw_text="وظيفة مهندس"),
+                           normalize.make_job(title="محاسب", source="بوابات", url="https://careers.example.com/1",
+                                              raw_text="وظيفة محاسب")])
     with storage.edit(origin.CACHE_KEY) as c:
         c.pop("https://linkedksa.com/5/", None)
-    check("backfill: stored relay job gets its original link", origin.backfill_stored() == 1
-          and storage.read("jobs")[0]["apply_url"] == "https://forms.gle/xyz")
+    moved = waiting.take_from_store()
+    check("waiting: a stored job without its original link leaves the job list", len(moved) == 1
+          and [j["title"] for j in storage.read("jobs")] == ["محاسب"] and len(storage.read(waiting.KEY)) == 1)
+    tg = normalize.make_job(title="مندوب", source="قنوات تيليجرام", url="https://t.me/somechannel/55", raw_text="وظيفة مندوب")
+    refused = normalize.make_job(title="فني", source="وظيفتك علينا", url="https://www.wdeftksa.com/sa/jobs/77", raw_text="وظيفة فني")
+    old = normalize.make_job(title="سائق", source="ساحة الوظائف", url="https://linkedksa.com/old/", raw_text="وظيفة سائق")
+    old["collected_at"] = "2020-01-01T00:00:00+03:00"
+    REFUSING.add("www.wdeftksa.com")
+    check("waiting: relay jobs are held, not stored; a Telegram post with no link is never held",
+          waiting.hold([tg, refused, old]) == 2 and len(storage.read("jobs")) == 1 and tg["id"] not in storage.read(waiting.KEY))
+    with storage.edit(waiting.KEY) as w0:     # waited more than 48 hours already
+        w0[old["id"]]["since"] = "2020-01-01T00:00:00+03:00"
+    ready, stats = waiting.process(60)
+    w = storage.read(waiting.KEY)
+    check("waiting: original link found -> ready to add, with it", [j["title"] for j in ready] == ["مهندس"]
+          and ready[0]["apply_url"] == "https://forms.gle/xyz", [(j["title"], j.get("apply_url")) for j in ready])
+    check("waiting: a job not found in time is dropped", stats["dropped"] == 1 and old["id"] not in w, stats)
+    check("waiting: a resolved job counts as new from now (alerts, digests)", ready[0]["collected_at"] > "2026"
+          and ready[0].get("first_collected_at") is not None)
+    check("waiting: a stale page is remembered, never held again", waiting.hold([old]) == 0)
+    check("waiting: a page that refuses the cloud waits for the helper", refused["id"] in w
+          and "https://www.wdeftksa.com/sa/jobs/77" in (storage.read("inbox").get(origin.INBOX_KEY) or {}).get("pending", []))
+    view = storage.read("sources_status").get("_origin_wait") or {}
+    check("waiting: dashboard summary", view.get("count") == 1 and view.get("resolved_today") == 1
+          and view.get("for_helper") == 1 and view["items"][0]["title"] == "فني", {k: v for k, v in view.items() if k != "items"})
+    with storage.edit(origin.CACHE_KEY) as c:
+        c["https://linkedksa.com/dead/"] = ""
+    dead = normalize.make_job(title="نجار", source="ساحة الوظائف", url="https://linkedksa.com/dead/", raw_text="وظيفة نجار")
+    check("waiting: a known dead page is never held again", waiting.hold([dead]) == 0)
     check("catalog: an already-original job is never overwritten",
-          catalog.set_apply_links({"https://linkedksa.com/5/": "https://other.example.com/x"}) == 0)
+          catalog.set_apply_links({"https://careers.example.com/1": "https://other.example.com/x"}) == 0)
+
+    totals = {"items": 0, "jobs": 0, "added": 0, "sent": 0, "ai_used": False}
+    runner._store_source({"key": "t", "name": "اختبار", "filter_jobs": False},
+                         [{"title": "مصمم جرافيك", "url": "https://www.saudijobs24.com/t555-x", "raw_text": "وظيفة مصمم"},
+                          {"title": "كاتب محتوى", "url": "https://careers.example.com/9", "raw_text": "وظيفة كاتب"}],
+                         totals, {})
+    titles = [j["title"] for j in storage.read("jobs")]
+    check("runner: only jobs with their original link are added; the rest wait",
+          "كاتب محتوى" in titles and "مصمم جرافيك" not in titles and totals["held"] == 1
+          and any(e["job"]["title"] == "مصمم جرافيك" for e in storage.read(waiting.KEY).values()), (titles, totals))
+
+    # ------------------------------------------------------------ employers (company names)
+    card = ('<div class="card job-card"><a href="/ar/jobs/r-x/id-1"><h2>مدير مبيعات</h2><p>Wethaq</p>'
+            '<img alt="شعار Wethaq" class="partner-logo" src="x.svg"/></a></div>')
+    sabbar = next(s for s in runner.load_sources() if s["key"] == "sabbar")
+    items = html_list.parse_list(card, sabbar, "https://sabbar.com/ar/jobs?page=1")
+    check("sabbar: the employer is read from the card", items and items[0]["company"] == "Wethaq", items)
+    check("company: placeholders are not employers", not normalize.company_known("جهة غير مذكورة")
+          and not normalize.company_known("شركة كبرى") and normalize.company_known("Wethaq"))
+    j1 = normalize.make_job(title="مدير مبيعات", source="صبّار", url="https://sabbar.com/ar/jobs/r-x/id-1", raw_text="x")
+    storage.write("jobs", [j1])
+    j2 = normalize.make_job(title="مدير مبيعات", source="صبّار", url="https://sabbar.com/ar/jobs/r-x/id-1", raw_text="x",
+                            company="Wethaq")
+    catalog.merge_collected([j2])
+    check("company: a job seen again fills the stored employer (same id)", storage.read("jobs")[0]["company"] == "Wethaq"
+          and storage.read("jobs")[0]["id"] == j1["id"])
+    from backend import enrich
+    check("company: the AI's answer must be written in the ad", enrich._employer_ok("Wethaq", "تعلن Wethaq عن وظيفة")
+          and not enrich._employer_ok("أرامكو", "وظيفة في شركة كبرى") and not enrich._employer_ok("صبّار", "صبّار وظائف"))
 
     # ------------------------------------------------------------ helper: which sources
     from tools import saudi_helper
@@ -140,6 +198,9 @@ try:
               "off": {"status": "blocked", "message": "HTTP 403"}}
     keys = [s["key"] for s in saudi_helper.wanted_sources(srcs, status)]
     check("helper: marked sources + sources the cloud found blocked", keys == ["jadarat", "tanqeeb"], keys)
+    big = [{"raw_text": "x" * 400_000} for _ in range(10)]
+    parts = saudi_helper._chunks(big)
+    check("helper: big batches are sent in small parts", len(parts) >= 3 and sum(len(p) for p in parts) == 10)
     check("helper: never LinkedIn, never a rate limit", not runner.helper_can_fetch({"key": "linkedin", "type": "linkedin"})
           and not runner.helper_can_fetch({"key": "a", "type": "rss"}, "HTTP 429"))
 

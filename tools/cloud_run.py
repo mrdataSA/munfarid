@@ -130,6 +130,7 @@ def main():
     try:   # the owner dashboard's tables (created once) + a one-time owner claim code
         analytics.init_schema()
         owner.set_claim(os.environ.get("OWNER_CLAIM_CODE", "").strip())
+        owner.set_helper_key(os.environ.get("HELPER_KEY", ""))   # the Saudi helper on Raed's PC
     except Exception:
         log.exception("dashboard setup failed")
     from collectors import runner

@@ -520,6 +520,18 @@ def canonical_url(url):
     return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path.rstrip("/"), urlencode(keep), ""))
 
 
+UNKNOWN_COMPANY = "جهة غير مذكورة"
+# What a site writes where the employer should be: not an employer
+COMPANY_PLACEHOLDERS = frozenset(norm(x) for x in (
+    UNKNOWN_COMPANY, "غير مذكور", "غير مذكورة", "غير معروف", "شركة كبرى", "شركة رائدة", "شركة سرية", "جهة سرية",
+    "confidential", "company", "شركة", "مؤسسة", "-", "—", "n/a"))
+
+
+def company_known(company):
+    c = norm(one_line(company or "", 100))
+    return bool(c) and c not in COMPANY_PLACEHOLDERS
+
+
 def merge_key(title, company, city):
     """Cross-source duplicate key; '' when the company is unknown (too weak to merge on)."""
     if not norm(company):
@@ -598,6 +610,7 @@ def make_job(*, title, source, url="", company="", city="", specialty="", skills
     if len(title) < 3:
         return None
     company = one_line(company, 100)
+    company = company if company_known(company) else ""
     raw_text = strip_phones(clean_text(raw_text, 4000))
     description = strip_phones(clean_text(description or raw_text, 3000))
     city = canonical_city(city) or detect_city(title, city, raw_text[:600])
@@ -616,7 +629,7 @@ def make_job(*, title, source, url="", company="", city="", specialty="", skills
     return {
         "id": "c" + h[:12],
         "title": title,
-        "company": company or "جهة غير مذكورة",
+        "company": company or UNKNOWN_COMPANY,
         "city": city or "غير محدد",
         "specialty": specialty,
         "skills": skills,

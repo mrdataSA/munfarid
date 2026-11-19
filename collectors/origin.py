@@ -303,17 +303,3 @@ def apply_helper_results():
             inbox.pop(INBOX_KEY, None)
     return n
 
-
-def backfill_stored(limit=100, seconds=420):
-    """Jobs stored before their original link was known (newest first): resolve and store it."""
-    from backend import catalog
-    todo = []
-    for j in storage.read("jobs"):          # kept newest first
-        start = _target(j)
-        if start and not normalize.original_link(j):
-            todo.append({"url": start, "_start": start})
-    if not todo:
-        return 0
-    resolve(todo, limit=limit, seconds=seconds)
-    links = {it["_start"]: it["apply_url"] for it in todo if it.get("apply_url")}
-    return catalog.set_apply_links(links) if links else 0
