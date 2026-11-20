@@ -78,10 +78,12 @@ def _paused_until(until):
     return d if d > datetime.now(timezone.utc) else None
 
 
-def _record_block(reason):
+def _record_block(reason, read_before=0):
+    """read_before: pages this run read before the block. A run that read jobs first is a fresh
+    "slow down" (short pause), not a repeat of the last one."""
     with storage.edit("sources_status") as st:
         entry = st.setdefault("linkedin", {})
-        n = entry.get("blocks_in_row", 0) + 1
+        n = 1 if read_before else entry.get("blocks_in_row", 0) + 1
         minutes = _block_minutes(reason, n)
         until = datetime.now(RIYADH) + timedelta(minutes=minutes)
         entry["blocked_until"] = until.isoformat(timespec="seconds")
@@ -164,12 +166,12 @@ def _block_minutes(reason, n):
     return BLOCK_COOLDOWN_MINUTES
 
 
-def _fetch_page(window, start, url=None):
+def _fetch_page(window, start, url=None, read_before=0):
     url = url or GUEST_URL.format(kw="", window=window, start=start)
     try:
         html_text = base.fetch(url, check_robots=False, min_interval=PAGE_GAP, jitter=PAGE_JITTER)
     except base.Blocked as e:
-        raise base.Blocked(_record_block(str(e)))  # stop quietly; no retries
+        raise base.Blocked(_record_block(str(e), read_before))  # stop quietly; no retries
     cards = parse_cards(html_text)
     low = html_text[:20000].lower()
     # the full search page always carries a "sign in" link (uas/login): there only a real wall counts
@@ -246,11 +248,11 @@ def collect(source):
             requests += 1
             if start == 0 and not search_tried:
                 search_tried = True
-                cards = _fetch_page(window, 0, SEARCH_URL.format(window=window))   # ~25 jobs at once
+                cards = _fetch_page(window, 0, SEARCH_URL.format(window=window), read_before=pages_ok)   # ~25 jobs at once
                 if not cards:
                     continue   # the page listed nothing readable: the API page 0 instead
             else:
-                cards = _fetch_page(window, start)
+                cards = _fetch_page(window, start, read_before=pages_ok)
             pages_ok += 1
             if start == 0 and not cards:
                 empty_first = True   # nothing at all: maybe a quiet hour, maybe a silent throttle
@@ -279,7 +281,7 @@ def collect(source):
                     break
                 resume = {"start": b_start, "window": b_window, "at": now}
                 requests += 1
-                cards = _fetch_page(b_window, b_start)
+                cards = _fetch_page(b_window, b_start, read_before=pages_ok)
                 pages_ok += 1
                 keep(cards)
                 if len(cards) < PAGE_SIZE:
