@@ -71,8 +71,8 @@ FAST_COLLECT_MINUTES=60
 # Hide jobs older than N days
 JOB_MAX_AGE_DAYS=45
 
-# Most jobs kept (newest first); older ones are dropped
-MAX_STORED_JOBS=15000
+# Most jobs kept (newest first); older ones are dropped. ~1.7 KB each: 40,000 = ~70 MB (2026-11-20: 15,000 was full and cut fresh jobs)
+MAX_STORED_JOBS=40000
 
 # Web port
 PORT=8080
@@ -145,7 +145,7 @@ LINKEDIN_DAILY_CAP = get_int("LINKEDIN_DAILY_CAP", 240)
 AUTO_COLLECT_HOURS = get_int("AUTO_COLLECT_HOURS", 3)
 FAST_COLLECT_MINUTES = get_int("FAST_COLLECT_MINUTES", 60)
 JOB_MAX_AGE_DAYS = get_int("JOB_MAX_AGE_DAYS", 45)
-MAX_STORED_JOBS = max(1000, get_int("MAX_STORED_JOBS", 15000))
+MAX_STORED_JOBS = max(1000, get_int("MAX_STORED_JOBS", 40000))
 PORT = get_int("PORT", 8080)
 
 # Cloud storage: shared data (subscribers, settings, AI cache...) lives in Postgres (Supabase).
