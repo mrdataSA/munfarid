@@ -141,6 +141,49 @@ try:
     finally:
         config.MAX_STORED_JOBS = cap
 
+    # --- AI duplicates across sources (the model is faked: it answers "same" for STC/stc pairs)
+    from backend import ai, dedup
+    old = {"id": "d1", "title": "محاسب", "company": "الاتصالات السعودية", "city": "الرياض", "source": "بيت",
+           "posted_date": "2026-11-18", "collected_at": "2026-11-18T10:00:00+03:00", "url": "https://b.example/1"}
+    same_src = dict(old, id="d0", title="محاسب عام", url="https://b.example/0")
+    other = {"id": "d9", "title": "مهندس مدني", "company": "STC", "city": "Riyadh", "source": "LinkedIn",
+             "posted_date": "2026-11-19", "url": "https://l.example/9"}
+    new = {"id": "d2", "title": "Accountant", "company": "STC", "city": "Riyadh", "source": "LinkedIn",
+           "posted_date": "2026-11-19", "collected_at": "2026-11-19T10:00:00+03:00",
+           "url": "https://l.example/2", "apply_url": "https://careers.stc.example/2"}
+    storage.write("jobs", [old, same_src, other, new])
+    dedup._index[0] = None
+    asked = []
+
+    def fake_chat(system, user, **kw):
+        pairs = json.loads(user)
+        asked.extend(pairs)
+        return {"results": [{"key": p["key"], "same": {p["a"]["employer"], p["b"]["employer"]} ==
+                             {"STC", "الاتصالات السعودية"} and "Accountant" in (p["a"]["title"], p["b"]["title"])}
+                            for p in pairs]}
+    real = (ai.enabled, ai.chat_json, ai.usage_summary)
+    ai.enabled, ai.chat_json = (lambda: True), fake_chat
+    ai.usage_summary = lambda: {"requests": 0, "request_limit": 100, "tokens": 0, "token_limit": 1000}
+    try:
+        pairs = dedup.candidates([new], storage.read("jobs"))
+        ids = sorted(s["id"] for _, s in pairs)
+        check("dedup candidates: Arabic/English title + employer in another language, never the same source",
+              ids == ["d0", "d1"] or ids == ["d1"], ids)
+        gone = dedup.remove(dedup.find([new], 10))
+        kept = {j["id"]: j for j in storage.read("jobs")}
+        check("dedup: the new copy removed, the stored one kept with both sources",
+              gone == ["d2"] and "d2" not in kept and kept["d1"].get("also_on") == ["LinkedIn"]
+              and kept["d1"].get("apply_url") == "https://careers.stc.example/2", (gone, kept.get("d1")))
+        check("dedup: an engineer at the same employer is not a duplicate of an accountant",
+              "d9" in kept and not any(p["a"]["title"] == "مهندس مدني" or p["b"]["title"] == "مهندس مدني"
+                                       for p in asked))
+        n_asked = len(asked)
+        dedup.find([new], 10)
+        check("dedup: a pair is asked once (cached)", len(asked) == n_asked, len(asked))
+        check("dedup: counted for the dashboard", storage.read("bot_state")["ai_duplicates"]["total"] == 1)
+    finally:
+        ai.enabled, ai.chat_json, ai.usage_summary = real
+
     # --- the bot's slim copy: 700 characters of text, experience read from the whole text first
     from tools import cloud_run
     s = cloud_run.slim_job({"id": "s1", "title": "محاسب", "description": "أ" * 1500 + " خبرة 5 سنوات " + "ب" * 1500,

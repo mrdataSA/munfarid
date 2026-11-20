@@ -14,7 +14,7 @@ import time
 import traceback
 from urllib.parse import urlsplit
 
-from backend import ai, analytics, bot, catalog, config, enrich, normalize, notifier, storage
+from backend import ai, analytics, bot, catalog, config, dedup, enrich, normalize, notifier, storage
 
 from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, waiting, x_api
 
@@ -25,6 +25,8 @@ ORIGIN_FAST_SECONDS = 300
 ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at half the daily budget)
 COMPANY_BEFORE_ALERT = 30  # new jobs without an employer: the AI reads the ad for it before alerting
 COMPANY_BACKFILL = 200     # stored jobs without an employer, per full run
+DEDUP_BEFORE_ALERT = 60    # candidate pairs per source the AI checks for cross-source duplicates before alerting
+DEDUP_BACKFILL = 200       # stored jobs' candidate pairs per full run (capped at 35% of the daily AI budget)
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
 
@@ -269,6 +271,13 @@ def _add_jobs(key, jobs, totals, sent_per_user):
             enrich.fill_companies(added, COMPANY_BEFORE_ALERT)
         except Exception:
             log.warning("company search failed for %s:\n%s", key, traceback.format_exc())
+        try:   # the same vacancy already stored from another source, in other words or language: one copy
+            gone = set(dedup.remove(dedup.find(added, DEDUP_BEFORE_ALERT)))
+            if gone:
+                added = [j for j in added if j["id"] not in gone]
+                totals["duplicates"] = totals.get("duplicates", 0) + len(gone)
+        except Exception:
+            log.warning("duplicate check failed for %s:\n%s", key, traceback.format_exc())
     if added and config.DATABASE_URL:
         try:  # the owner's dashboard sees each new job as soon as it is stored
             analytics.sync_jobs(added)
@@ -394,6 +403,13 @@ def run_all(only=None, fast=False):
                 totals["companies"] = enrich.backfill_companies(COMPANY_BACKFILL)
             except Exception:
                 log.warning("company backfill failed:\n%s", traceback.format_exc())
+            try:  # cross-source duplicates already stored (AI), newest first, within budget
+                gone = dedup.backfill(DEDUP_BACKFILL)
+                totals["duplicates"] = totals.get("duplicates", 0) + len(gone)
+                if gone and config.DATABASE_URL:
+                    analytics.drop_rows(gone)
+            except Exception:
+                log.warning("duplicate backfill failed:\n%s", traceback.format_exc())
             try:  # older jobs the rules left as "أخرى" / without skills, newest first, within budget
                 totals["enriched"] = enrich.backfill(ENRICH_BACKFILL)
             except Exception:
@@ -410,7 +426,7 @@ def run_all(only=None, fast=False):
                    "held": totals.get("held", 0),
                    "jobs": totals["jobs"], "added": totals["added"], "notified_users": sum(1 for n in sent_per_user.values() if n),
                    "ai_used": totals["ai_used"], "enriched": totals.get("enriched", 0),
-                   "companies": totals.get("companies", 0),
+                   "companies": totals.get("companies", 0), "duplicates": totals.get("duplicates", 0),
                    "seconds": round(time.time() - started, 1), "finished_at": storage.now_iso()}
         if fast:
             summary["fast"] = True

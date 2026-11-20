@@ -288,7 +288,8 @@
       '<button class="drill-link" type="button" data-go="sources">التفاصيل في صفحة المصادر</button>' : '';
     const wk = j.week_change == null ? '' : (j.week_change >= 0 ? `<span class="up">▲ ${j.week_change}%</span>` : `<span class="down">▼ ${Math.abs(j.week_change)}%</span>`) + ' عن الأسبوع السابق';
     $('#kpis').innerHTML =
-      kpiDrill('الوظائف الحالية', n(j.live), `كل ما جُمع: ${n(j.all)}`, 'الوظائف الحالية', {}) +
+      kpiDrill('الوظائف الحالية', n(j.live), `كل ما جُمع: ${n(j.all)}` +
+        ((j.duplicates || {}).total ? ` · تكرار حذفه الذكاء: ${n(j.duplicates.total)}` : ''), 'الوظائف الحالية', {}) +
       kpiDrill('جديد اليوم', n(j.today), `أمس: ${n(j.yesterday)}`, 'وظائف جديدة اليوم', { status: ALL_STATUS, from: dayAgo(0) }) +
       kpiDrill('جديد آخر 7 أيام', n(j.week), wk, 'وظائف آخر 7 أيام', { status: ALL_STATUS, from: dayAgo(6) }) +
       kpiDrill('في الأرشيف', n(j.archived), `منتهية (أقل من 3 أشهر): ${n(j.expired)}`, 'الأرشيف (أكثر من 3 أشهر)', { status: 'archived' }) +

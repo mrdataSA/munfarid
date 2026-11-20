@@ -219,6 +219,16 @@ def sync_jobs(jobs, touch=False):
     return len(jobs)
 
 
+def drop_rows(ids):
+    """Jobs found to be a duplicate of another stored job (backend/dedup.py): out of the dashboard."""
+    if not _db() or not ids:
+        return 0
+    ids = list(ids)
+    for i in range(0, len(ids), 5000):
+        _pg()._run("delete from rizq.jobs_all where id = any(cast(:ids as text[]))", ids=ids[i:i + 5000])
+    return len(ids)
+
+
 def forget_jobs(ids):
     """Jobs moved back to the waiting room (no original link yet): out of every report until they
     are added again (the upsert then brings the row back)."""
@@ -679,6 +689,7 @@ def overview():
                  "week": week, "week_change": _pct(week, prev_week), "expired": status.get("expired", 0),
                  "archived": status.get("archived", 0),
                  "all": len(rows) + int(storage.read("bot_state").get("rows_on_pc") or 0),
+                 "duplicates": storage.read("bot_state").get("ai_duplicates") or {},
                  "kinds": {k: kinds.get(k, 0) for k in LINK_KINDS},
                  "waiting": {k: wait.get(k, 0) for k in ("count", "resolved_today", "dropped_today", "for_helper")},
                  "via_helper": sum(1 for r in live_rows if r.get("via_helper")),
