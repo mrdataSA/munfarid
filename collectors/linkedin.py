@@ -10,7 +10,7 @@ to ~1,000 new LinkedIn jobs a day, i.e. a handful of pages an hour.
 
 Politeness rules: 20-40 s between pages (slower than a person scrolling), a daily
 request cap, and on any block/verification page it STOPS quietly and logs the
-reason (HTTP 429: pause 3 h, doubling if it repeats; login wall: 24 h). No proxies,
+reason (HTTP 429: pause 30 min, doubling to 4 h if it repeats; login wall: 24 h). No proxies,
 no evasion, no login.
 """
 
@@ -40,14 +40,16 @@ MAX_WINDOW = 3 * 86400                 # after a long pause, look back up to 3 d
 GUEST_MAX_START = 990                  # LinkedIn's guest search stops paging around 1,000 results
 SEEN_KEEP = 6000                       # recent job ids remembered to know where the last sweep ended
 BACKLOG_OVERLAP = 5                    # re-read this many jobs where a backlog resumes (closed jobs shift the list up)
-RATE_LIMIT_PAUSE_HOURS = 3
+# HTTP 429 = "too many requests right now": LinkedIn's guest search answers it now and then even to a
+# single polite request (seen 2026-11-20: a 429, then 200 twenty minutes later). Standard back-off:
+# 30 min, doubling while it repeats, at most 4 h. A login wall / verification page = a full day.
+RATE_LIMIT_PAUSE_MINUTES = 30
+RATE_LIMIT_MAX_MINUTES = 240
+BLOCK_COOLDOWN_MINUTES = 24 * 60
 
 
 class Disabled(Exception):
     pass
-
-
-BLOCK_COOLDOWN_HOURS = 24
 
 
 RIYADH = timezone(timedelta(hours=3))
@@ -74,13 +76,15 @@ def _record_block(reason):
     with storage.edit("sources_status") as st:
         entry = st.setdefault("linkedin", {})
         n = entry.get("blocks_in_row", 0) + 1
-        hours = _block_hours(reason, n)
-        entry["blocked_until"] = (datetime.now(RIYADH) + timedelta(hours=hours)).isoformat(timespec="seconds")
+        minutes = _block_minutes(reason, n)
+        until = datetime.now(RIYADH) + timedelta(minutes=minutes)
+        entry["blocked_until"] = until.isoformat(timespec="seconds")
         entry["blocks_in_row"] = n
         entry["last_block_reason"] = reason
-    msg = "حظر من LinkedIn (" + reason + "). توقف " + str(hours) + " ساعات."
-    if n >= 2:
-        msg += " تكرر الحظر " + str(n) + " مرات: راجع الإذن أو أوقف LinkedIn."
+    msg = ("حظر من LinkedIn (" + reason + "). توقف حتى " + until.strftime("%H:%M")
+           + " بتوقيت الرياض (" + (f"{minutes // 60} ساعة" if minutes >= 60 else f"{minutes} دقيقة") + ").")
+    if n >= 4:
+        msg += " تكرر " + str(n) + " مرات متتالية."
     return msg
 
 
@@ -147,11 +151,11 @@ def _job_id(url):
     return (m.group(1) or m.group(2)) if m else (url or "")
 
 
-def _block_hours(reason, n):
+def _block_minutes(reason, n):
     """429 = "slow down": short pause that doubles if it repeats. Login wall / 999 / captcha: a full day."""
     if "429" in reason:
-        return min(RATE_LIMIT_PAUSE_HOURS * (2 ** max(n - 1, 0)), BLOCK_COOLDOWN_HOURS)
-    return BLOCK_COOLDOWN_HOURS
+        return min(RATE_LIMIT_PAUSE_MINUTES * (2 ** max(n - 1, 0)), RATE_LIMIT_MAX_MINUTES)
+    return BLOCK_COOLDOWN_MINUTES
 
 
 def _fetch_page(window, start):
