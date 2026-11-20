@@ -31,8 +31,10 @@ COUNT_RE = re.compile(r'results-context-header__job-count[^>]*>\s*([\d,.+]+)')
 JOB_ID = re.compile(r"-(\d{6,})/?$|/view/(\d{6,})")
 COMPANIES_KEEP = 400   # hiring companies seen on LinkedIn (names only), to find their own portals later
 PAGE_SIZE = 10
-PAGE_GAP, PAGE_JITTER = 20.0, 20.0     # 20-40 s between pages
-MAX_PAGES_PER_RUN = 25                 # one run never asks more than this
+# 60-90 s between pages: at 20-40 s LinkedIn's guest search answered 429 after 3 pages (2026-11-20).
+# 16 pages (<= 24 min) fit in one 30-minute run: up to ~7,500 jobs a day.
+PAGE_GAP, PAGE_JITTER = 60.0, 30.0
+MAX_PAGES_PER_RUN = 16                 # one run never asks more than this
 MIN_WINDOW = 3600                      # always look back at least 1 h
 WINDOW_MARGIN = 1800                   # overlap between sweeps; repeats are skipped by job id
 FIRST_WINDOW = 86400                   # first sweep: the last 24 h
