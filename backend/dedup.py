@@ -28,7 +28,7 @@ log = logging.getLogger("rizq.dedup")
 
 WINDOW_DAYS = 14
 CROSS_DAYS = 3
-PER_JOB = 3
+PER_JOB = 6
 PAIR_BATCH = 12
 TEXT_CHARS = 350
 BACKFILL_SHARE = 0.35      # the backfill of stored jobs never takes the daily AI budget past 35%
@@ -129,33 +129,64 @@ def candidates(new_jobs, stored, among_new=False):
             continue
         sig, ck = title_sig(n.get("title") or ""), company_key(n.get("company"))
         city = normalize.canonical_city(n.get("city") or "")
-        found = []
+        strong = []   # the same employer with a close title, or the same apply link
         if ck:
             for sid in idx.by_company.get(ck, []):
                 s = by_id.get(sid)
                 if s and sig & title_sig(s.get("title") or ""):
-                    found.append(s)
-        if city and sig and ck:
-            # employers that may be one name in two languages: only ads posted within CROSS_DAYS (a
-            # cross-post appears within a day or two; many same-title jobs in a big city do not)
-            for sid in idx.by_city_title.get((city, sig), []):
-                s = by_id.get(sid)
-                if s and normalize.company_known(s.get("company")) and _close_dates(n, s, CROSS_DAYS):
-                    found.append(s)
+                    strong.append(s)
         link = _link(n)
         if link:
-            found += [by_id[sid] for sid in idx.by_link.get(link, []) if sid in by_id]
+            strong += [by_id[sid] for sid in idx.by_link.get(link, []) if sid in by_id]
+        weak = []
+        if city and sig and ck:
+            # employers that may be one name in two languages: only ads posted within CROSS_DAYS (a
+            # cross-post appears within a day or two; many same-title jobs in a big city do not), and
+            # only names that could be one another (written in two scripts, or sharing a word)
+            for sid in idx.by_city_title.get((city, sig), []):
+                s = by_id.get(sid)
+                if s and normalize.company_known(s.get("company")) and _close_dates(n, s, CROSS_DAYS) \
+                        and _maybe_same_employer(ck, company_key(s.get("company"))):
+                    weak.append(s)
         seen, picked = set(), []
-        for s in found:
-            if s["id"] in seen or s["id"] == n["id"] or s.get("source") == n.get("source") or s["id"] in new_ids:
-                continue
-            seen.add(s["id"])
-            if _close_dates(n, s) and n.get("source") not in (s.get("also_on") or []):
-                picked.append(s)
-        dn = _day(n)
-        picked.sort(key=lambda s: abs((dn - _day(s)).days) if dn and _day(s) else WINDOW_DAYS)
-        pairs += [(n, s) for s in picked[:PER_JOB]]
+        for rank, group in enumerate((strong, weak)):
+            for s in group:
+                if s["id"] in seen or s["id"] == n["id"] or s.get("source") == n.get("source") or s["id"] in new_ids:
+                    continue
+                seen.add(s["id"])
+                if _close_dates(n, s) and n.get("source") not in (s.get("also_on") or []):
+                    picked.append((rank, _hours_apart(n, s), s))
+        picked.sort(key=lambda x: (x[0], x[1]))   # same employer / link first, then the closest in time
+        pairs += [(n, s) for _, _, s in picked[:PER_JOB]]
     return pairs
+
+
+def _script(key):
+    letters = [c for c in key if c.isalpha()]
+    arabic = sum(1 for c in letters if "؀" <= c <= "ۿ")
+    return "ar" if arabic * 2 >= len(letters) else "latin"
+
+
+def _maybe_same_employer(a, b):
+    """Two employer keys that could be one employer: the same script needs a shared word (a different
+    name in the same script is another employer); two scripts may be a translation (the AI decides)."""
+    if not a or not b:
+        return False
+    if _script(a) != _script(b):
+        return True
+    return bool(set(a.split()) & set(b.split()))
+
+
+def _hours_apart(a, b):
+    from datetime import datetime
+    try:
+        ta = datetime.fromisoformat(a.get("collected_at") or a.get("posted_date") or "")
+        tb = datetime.fromisoformat(b.get("collected_at") or b.get("posted_date") or "")
+        if (ta.tzinfo is None) != (tb.tzinfo is None):
+            ta, tb = ta.replace(tzinfo=None), tb.replace(tzinfo=None)
+        return abs((ta - tb).total_seconds()) / 3600
+    except ValueError:
+        return 24.0 * WINDOW_DAYS
 
 
 def _pair_key(a, b):
@@ -295,36 +326,62 @@ def remove(dupes):
     with storage.edit("bot_state") as st:   # shown on the dashboard
         today = date.today().isoformat()
         d = st.get("ai_duplicates") if isinstance(st.get("ai_duplicates"), dict) else {}
-        st["ai_duplicates"] = {"total": int(d.get("total") or 0) + len(drop),
-                               "today": (int(d.get("today") or 0) if d.get("day") == today else 0) + len(drop),
-                               "day": today}
+        st["ai_duplicates"] = dict(d, total=int(d.get("total") or 0) + len(drop),
+                                   today=(int(d.get("today") or 0) if d.get("day") == today else 0) + len(drop),
+                                   day=today)
     log.info("AI duplicates removed: %d", len(drop))
     return list(drop)
 
 
-def backfill(limit_pairs=200):
-    """Stored jobs of the last WINDOW_DAYS checked against the rest (full runs, a share of the AI budget)."""
+def backlog_pairs():
+    """Every candidate pair among ALL stored jobs not judged yet (newer job first), plus the pairs the
+    AI already called the same whose two jobs are both still stored (removed without asking again)."""
     stored = storage.read("jobs")
-    recent = sorted(stored, key=lambda j: j.get("collected_at") or "", reverse=True)
-    cutoff = (date.today().toordinal() - WINDOW_DAYS)
-    recent = [j for j in recent if _day(j) and _day(j).toordinal() >= cutoff]
-    # the newer of each pair is the one removed: check the newest first against older ones
-    out, removed = [], set()
-    for start in range(0, len(recent), 300):
-        if limit_pairs <= 0 or _budget_share() >= BACKFILL_SHARE:
-            break
-        chunk = [j for j in recent[start:start + 300] if j["id"] not in removed]
-        pairs = [(n, s) for n, s in candidates(chunk, stored, among_new=True)
-                 if (s.get("collected_at") or "") <= (n.get("collected_at") or "")
-                 and s["id"] not in removed][:limit_pairs]
-        if not pairs:
+    cache = storage.read("ai_cache")
+    jobs = sorted(stored, key=lambda j: j.get("collected_at") or "", reverse=True)
+    todo, known_same, seen = [], [], set()
+    for n, s in candidates(jobs, stored, among_new=True):
+        if (s.get("collected_at") or "") > (n.get("collected_at") or ""):
+            continue   # the newer of the two is the one removed: each pair once, from its newer side
+        k = _pair_key(n, s)
+        if k in seen:
             continue
-        limit_pairs -= len(pairs)
-        same = judge(pairs)
+        seen.add(k)
+        if cache.get(k) is True:
+            known_same.append((n, s))
+        elif not isinstance(cache.get(k), bool):
+            todo.append((n, s))
+    return todo, known_same
+
+
+def backfill(limit_pairs=600):
+    """Clean the stored jobs: every candidate pair not judged yet, newest first, up to limit_pairs a run
+    and BACKFILL_SHARE of the daily AI budget. What is left is recorded (the dashboard and the next run)."""
+    todo, known_same = backlog_pairs()
+    out, removed = [], set()
+
+    def take(pairs, same):
         for n, s in pairs:
             if same.get(_pair_key(n, s)) and n["id"] not in removed and s["id"] not in removed:
                 out.append((n, s))
                 removed.add(n["id"])
-        if len(same) < len({_pair_key(n, s) for n, s in pairs}):
+
+    take(known_same, {_pair_key(n, s): True for n, s in known_same})
+    step = PAIR_BATCH * 10
+    for start in range(0, min(len(todo), limit_pairs), step):
+        if _budget_share() >= BACKFILL_SHARE:
+            break
+        part = [(n, s) for n, s in todo[start:min(start + step, limit_pairs)]
+                if n["id"] not in removed and s["id"] not in removed]
+        same = judge(part) if part else {}
+        take(part, same)
+        if len(same) < len({_pair_key(n, s) for n, s in part}):
             break   # the AI stopped (budget): the rest next time
+    cache = storage.read("ai_cache")
+    left = sum(1 for n, s in todo if n["id"] not in removed and s["id"] not in removed
+               and not isinstance(cache.get(_pair_key(n, s)), bool))
+    with storage.edit("bot_state") as st:
+        d = st.get("ai_duplicates") if isinstance(st.get("ai_duplicates"), dict) else {}
+        st["ai_duplicates"] = dict(d, backlog=left, backlog_at=storage.now_iso())
+    log.info("duplicate cleanup: %d pairs judged, %d left to judge", len(todo) - left, left)
     return remove(out)

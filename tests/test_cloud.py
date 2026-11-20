@@ -211,6 +211,24 @@ try:
         check("dedup: next run, the waiting job is checked (a duplicate: removed, not added)",
               totals["added"] == 0 and totals.get("duplicates") == 1 and "d3" not in stored_ids
               and storage.read("dedup_wait") == [], totals)
+        # cleanup of stored jobs: walks past pairs judged before, records what is left
+        ai.chat_json = fake_chat
+        base_jobs = [{"id": f"x{i}", "title": "محاسب", "company": f"شركة رقم {i}", "city": "الدمام", "source": "بيت",
+                      "posted_date": "2026-11-19", "collected_at": f"2026-11-19T0{i}:00:00+03:00",
+                      "url": f"https://b.example/x{i}"} for i in range(4)]
+        twins = [dict(j, id="y" + j["id"][1:], source="LinkedIn", title="Accountant", url=j["url"] + "y",
+                      collected_at=j["collected_at"].replace("T0", "T1")) for j in base_jobs]
+        dup_a = dict(base_jobs[0], id="z1", company="STC", source="LinkedIn", title="Accountant",
+                     collected_at="2026-11-19T20:00:00+03:00", url="https://l.example/z1")
+        dup_b = dict(base_jobs[0], id="z0", company="الاتصالات السعودية", url="https://b.example/z0")
+        storage.write("jobs", base_jobs + twins + [dup_a, dup_b])
+        dedup._index[0] = None
+        first = dedup.backfill(limit_pairs=3)
+        bl1 = storage.read("bot_state")["ai_duplicates"]["backlog"]
+        second = dedup.backfill(limit_pairs=50)
+        bl2 = storage.read("bot_state")["ai_duplicates"]["backlog"]
+        check("dedup cleanup: continues past pairs judged before, until nothing is left",
+              bl1 > 0 and bl2 == 0 and "z1" in first + second and len(first + second) == 1, (first, second, bl1, bl2))
         ai.chat_json = down   # down for 24 h: the job is added anyway (never lost)
         storage.write("dedup_wait", [{"since": "2026-11-01T00:00:00+03:00", "job": dict(twin, id="d4", url="https://l.example/4")}])
         totals = {"jobs": 0, "added": 0, "sent": 0}
