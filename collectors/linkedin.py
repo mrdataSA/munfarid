@@ -27,6 +27,10 @@ from . import base, dom
 GUEST_URL = ("https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
              "?keywords={kw}&location=Saudi%20Arabia&f_TPR=r{window}&sortBy=DD&start={start}")
 COUNT_URL = "https://www.linkedin.com/jobs/search?keywords=&location=Saudi%20Arabia&f_TPR=r86400"
+# The public search page itself lists ~25 jobs in one request (the guest API pages hold 10), and
+# LinkedIn allows only a few guest requests an hour, so the first page of a sweep is read from it
+SEARCH_URL = ("https://www.linkedin.com/jobs/search?keywords=&location=Saudi%20Arabia"
+              "&f_TPR=r{window}&sortBy=DD&position=1&pageNum=0")
 COUNT_RE = re.compile(r'results-context-header__job-count[^>]*>\s*([\d,.+]+)')
 JOB_ID = re.compile(r"-(\d{6,})/?$|/view/(\d{6,})")
 COMPANIES_KEEP = 400   # hiring companies seen on LinkedIn (names only), to find their own portals later
@@ -160,15 +164,17 @@ def _block_minutes(reason, n):
     return BLOCK_COOLDOWN_MINUTES
 
 
-def _fetch_page(window, start):
-    url = GUEST_URL.format(kw="", window=window, start=start)
+def _fetch_page(window, start, url=None):
+    url = url or GUEST_URL.format(kw="", window=window, start=start)
     try:
         html_text = base.fetch(url, check_robots=False, min_interval=PAGE_GAP, jitter=PAGE_JITTER)
     except base.Blocked as e:
         raise base.Blocked(_record_block(str(e)))  # stop quietly; no retries
     cards = parse_cards(html_text)
     low = html_text[:20000].lower()
-    if not cards and ("authwall" in low or "checkpoint/" in low or "uas/login" in low):
+    # the full search page always carries a "sign in" link (uas/login): there only a real wall counts
+    walls = ("authwall", "checkpoint/") if url.startswith(SEARCH_URL[:40]) else ("authwall", "checkpoint/", "uas/login")
+    if not cards and any(w in low for w in walls):
         raise base.Blocked(_record_block("login wall"))
     return cards
 
@@ -219,6 +225,7 @@ def collect(source):
     old_w = int(min(backlog["window"] + (now - backlog["at"]), MAX_WINDOW)) if backlog else 0
     next_backlog = resume = stopped = None
     empty_first = False
+    search_tried = False
 
     def keep(cards):
         # skip jobs read before, and repeats inside this run (new jobs push a card onto the next page)
@@ -237,7 +244,13 @@ def collect(source):
             # downward, so the wider of the two windows also covers an older backlog)
             resume = {"start": start, "window": int(min(max(window, old_w), MAX_WINDOW)), "at": now}
             requests += 1
-            cards = _fetch_page(window, start)
+            if start == 0 and not search_tried:
+                search_tried = True
+                cards = _fetch_page(window, 0, SEARCH_URL.format(window=window))   # ~25 jobs at once
+                if not cards:
+                    continue   # the page listed nothing readable: the API page 0 instead
+            else:
+                cards = _fetch_page(window, start)
             pages_ok += 1
             if start == 0 and not cards:
                 empty_first = True   # nothing at all: maybe a quiet hour, maybe a silent throttle
@@ -249,7 +262,7 @@ def collect(source):
             if len(cards) < PAGE_SIZE:
                 reached_seen = True   # end of the window: nothing older to fetch
                 break
-            start += PAGE_SIZE
+            start += len(cards)
         newest_count = len(items)
         if not reached_seen:
             # page cap hit before reaching known jobs: keep the rest of this window for later runs
