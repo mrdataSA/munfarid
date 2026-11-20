@@ -704,9 +704,39 @@ def api_helper_report(h):
               "host": str(r.get("host") or "")[:60], "error": str(r.get("error") or "")[:300],
               "notes": {str(k)[:40]: str(v)[:300] for k, v in (r.get("notes") or {}).items()}
               if isinstance(r.get("notes"), dict) else {}}
+    arch = r.get("archive")
+    if isinstance(arch, dict):   # the PC archive: numbers, its folder, its last error
+        report["archive"] = {k: arch[k] for k in ("jobs", "rows", "saved", "free_gb") if isinstance(arch.get(k), int)}
+        report["archive"].update({k: str(arch[k])[:200] for k in ("path", "error", "backup") if arch.get(k)})
     with storage.edit("bot_state") as st:   # the LinkedIn task (every 30 min) and the daily run, apart
         st["helper_linkedin" if r.get("mode") == "linkedin" else "helper_last"] = report
+        if "archive" in report:
+            st["pc_archive"] = dict(report["archive"], at=report["at"])
     return ok()
+
+
+ARCHIVE_TAKE_MAX = 1500   # ~2 MB an answer (a function's answer is limited to 4.5 MB)
+
+
+@route("GET", "/api/helper/archive")
+def api_helper_archive(h):
+    """Jobs waiting for the PC archive, oldest first. They stay here until /ack."""
+    _helper(h)
+    try:
+        n = max(1, min(ARCHIVE_TAKE_MAX, int((h.query().get("limit") or [ARCHIVE_TAKE_MAX])[0])))
+    except ValueError:
+        n = ARCHIVE_TAKE_MAX
+    return ok({"items": analytics.outbox_take(n)})
+
+
+@route("POST", "/api/helper/archive/ack")
+def api_helper_archive_ack(h):
+    """The PC saved these (committed on its disk): only now are they deleted here."""
+    _helper(h)
+    ids = h.body().get("ids")
+    if not isinstance(ids, list):
+        raise ApiError(400, "bad ids")
+    return ok({"deleted": analytics.outbox_ack(ids)})
 
 
 # ---------------------------------------------------------------- owner dashboard

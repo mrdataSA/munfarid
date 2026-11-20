@@ -23,7 +23,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from backend import analytics, bot, config, owner, pgstore, storage  # noqa: E402
+from backend import analytics, bot, config, normalize, owner, pgstore, storage  # noqa: E402
 
 log = logging.getLogger("rizq.cloud")
 SNAPSHOT = os.path.join(ROOT, "snapshot")   # bundled with the bot/site function (read-only)
@@ -77,11 +77,29 @@ def backup_daily():
     return True
 
 
+SNAPSHOT_TEXT_CHARS = 700   # the bot reads at most the first 700 characters of an ad (titles.job_words)
+
+
+def slim_job(j):
+    """The bot's copy of a job: the full ad text is ~60% of a job's size and the bot only needs its
+    start, so it gets a 700-character excerpt, with the years of experience read beforehand from the
+    whole text. The full text stays in the collector's store and the dashboard's database.
+    (2026-11-20: 3.5 KB per job in memory, 2.6 KB slim: 150,000 jobs = ~400 MB of the 2 GB.)"""
+    text = j.get("raw_text") or j.get("description") or ""
+    out = {k: v for k, v in j.items() if k not in ("raw_text", "description", "merge_key")}
+    if "exp_years" not in j:
+        out["exp_years"] = normalize.detect_experience(j.get("title") or "", text)
+    out["raw_text"] = text[:SNAPSHOT_TEXT_CHARS]
+    return out
+
+
 def write_snapshot():
     """Read-only copy for the bot and the site on Vercel (bundled with the deployment)."""
     os.makedirs(SNAPSHOT, exist_ok=True)
     for name in SNAPSHOT_COLLECTIONS:
         data = storage.read(name)
+        if name == "jobs":
+            data = [slim_job(j) for j in data]
         path = os.path.join(SNAPSHOT, storage.COLLECTIONS[name][0] + ".gz")
         with gzip.open(path + ".tmp", "wt", encoding="utf-8", compresslevel=9) as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
@@ -101,6 +119,21 @@ def write_snapshot():
     with open(os.path.join(PUB, "jobs.json.tmp"), "w", encoding="utf-8") as f:
         json.dump(body, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(os.path.join(PUB, "jobs.json.tmp"), os.path.join(PUB, "jobs.json"))
+
+
+def ship_archive():
+    """Jobs that left the live list go to the database outbox for the PC archive (removed from the
+    local list only once queued), then, near the free plan's limit, the oldest archived rows too."""
+    out = storage.read("archive_out")
+    queued = analytics.outbox_put(out) if out else 0
+    if out:
+        with storage.edit("archive_out") as cur:
+            del cur[:len(out)]   # only what was handed over (a job added meanwhile stays)
+    rows = analytics.offload_rows_if_full()
+    waiting = analytics.outbox_count()
+    with storage.edit("bot_state") as st:
+        st["archive_outbox"] = {"waiting": waiting, "at": storage.now_iso()}
+    return {"queued": queued, "rows": rows, "waiting": waiting}
 
 
 def post_feeds(minutes):
@@ -151,6 +184,10 @@ def main():
         report["archived"] = analytics.archive_old()
     except Exception:
         log.exception("dashboard sync failed")
+    try:
+        report["pc_archive"] = ship_archive()
+    except Exception:
+        log.exception("PC archive outbox failed (the jobs stay in archive_out for the next run)")
     try:
         backup_daily()
         pgstore.purge_deleted()

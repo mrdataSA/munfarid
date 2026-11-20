@@ -121,6 +121,32 @@ try:
     kept = storage.read("jobs")
     check("original after relay: original kept, relay noted, no new alert",
           added == [] and [j["id"] for j in kept] == ["jad9"] and kept[0].get("also_on") == ["ناقل"], kept)
+
+    # --- the PC archive: jobs leaving the live list are queued in full, never just dropped
+    storage.write("jobs", [])
+    storage.write("archive_out", [])
+    cap = config.MAX_STORED_JOBS
+    config.MAX_STORED_JOBS = 2
+    try:
+        def job(i, day):
+            return {"id": f"a{i}", "title": f"وظيفة أرشيف {i}", "company": f"جهة {i}", "city": "جدة",
+                    "source": "مصدر", "url": f"https://ex.example/{i}", "posted_date": day,
+                    "raw_text": "نص كامل " * 200}
+        catalog.merge_collected([job(1, "2026-11-18"), job(2, "2026-11-19"), job(3, "2026-11-20")])
+        live = [j["id"] for j in storage.read("jobs")]
+        out = storage.read("archive_out")
+        check("over the cap: newest kept live, the oldest queued for the PC",
+              live == ["a3", "a2"] and [j["id"] for j in out] == ["a1"], (live, out))
+        check("archived job kept in full (whole ad text)", len(out[0].get("raw_text", "")) > 1000)
+    finally:
+        config.MAX_STORED_JOBS = cap
+
+    # --- the bot's slim copy: 700 characters of text, experience read from the whole text first
+    from tools import cloud_run
+    s = cloud_run.slim_job({"id": "s1", "title": "محاسب", "description": "أ" * 1500 + " خبرة 5 سنوات " + "ب" * 1500,
+                            "merge_key": "k"})
+    check("slim job: short text, no description/merge key, experience from the full text",
+          len(s["raw_text"]) == 700 and "description" not in s and "merge_key" not in s and s["exp_years"] == 5, s)
 finally:
     shutil.rmtree(TMP, ignore_errors=True)
 

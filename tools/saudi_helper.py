@@ -205,6 +205,7 @@ def run_via_site(minutes, only=None):
     """The normal mode: the site hands out the work and takes the results (helper key)."""
     from collectors import origin
     work = _api("GET", "/api/helper/work")
+    archive = save_archive()
     pending = [] if only else list(work.get("pending") or [])
     status = dict(work.get("sources_status") or {})
     mine = storage.read("sources_status")
@@ -220,8 +221,26 @@ def run_via_site(minutes, only=None):
     tried = [u for u in pending if u not in left]
     if tried or box.get("done"):
         _api("POST", "/api/helper/origin", {"tried": tried, "done": box.get("done") or {}})
+    report["archive"] = archive
     _api("POST", "/api/helper/report", {"report": report})
     return report
+
+
+ARCHIVE_SECONDS = 90   # per run (every 30 min); the LinkedIn sweep after it needs the rest of the 28 min
+
+
+def save_archive():
+    """Jobs that left the cloud's live list -> the PC archive on E: (tools/pc_archive.py).
+    Never stops the run: on any problem the jobs simply wait in the cloud."""
+    from tools import pc_archive
+    try:
+        out = pc_archive.sync(_api, seconds=ARCHIVE_SECONDS)
+        if out.get("saved"):
+            log.info("archive: %d saved (%d jobs on the PC)", out["saved"], out.get("jobs", 0))
+        return out
+    except Exception as e:   # noqa: BLE001 - reported on the dashboard, retried next run
+        log.warning("archive: %s", e)
+        return {"error": str(e)[:200]}
 
 
 def run_with_database(minutes, only=None):

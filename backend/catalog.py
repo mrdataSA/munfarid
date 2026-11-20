@@ -184,9 +184,24 @@ def merge_collected(new_jobs):
         # Prune expired and cap size (keep newest)
         keep = [j for j in jobs if not normalize.is_expired(j, config.JOB_MAX_AGE_DAYS)]
         keep.sort(key=lambda j: j.get("posted_date") or "", reverse=True)
+        kept = {j["id"] for j in keep[:config.MAX_STORED_JOBS]}
+        leaving = [j for j in jobs if j["id"] not in kept]
         jobs[:] = keep[:config.MAX_STORED_JOBS]
-        kept = {j["id"] for j in jobs}
+        if leaving:
+            to_archive(leaving)
     return [j for j in added if j["id"] in kept]
+
+
+ARCHIVE_OUT_MAX = 60000   # jobs waiting to be sent to the PC archive (~75 MB); older ones beyond that are dropped
+
+
+def to_archive(jobs):
+    """Jobs leaving the live list (over 45 days old, or over the size cap) go to Raed's PC archive in
+    full: the cloud run hands them to the database outbox, the helper on the PC saves them on E:."""
+    with storage.edit("archive_out") as out:
+        out.extend(jobs)
+        if len(out) > ARCHIVE_OUT_MAX:
+            del out[:len(out) - ARCHIVE_OUT_MAX]
 
 
 def set_apply_links(links):

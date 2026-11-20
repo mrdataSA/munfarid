@@ -272,6 +272,18 @@ try:
         check("helper API: only real sources", False)
     except urllib.error.HTTPError as e:
         check("helper API: only real sources", e.code == 400)
+    # the PC archive: key required; the PC's numbers reach the home page
+    check("archive API: no key, nothing", helper.req("GET", "/api/helper/archive")[0] == 401
+          and helper.req("POST", "/api/helper/archive/ack", {"ids": ["job:1"]})[0] == 401)
+    check("archive API: with the key (local mode: empty outbox)",
+          hreq("GET", "/api/helper/archive?limit=50")["items"] == []
+          and hreq("POST", "/api/helper/archive/ack", {"ids": ["job:1", 5]})["deleted"] == 0)
+    hreq("POST", "/api/helper/report", {"report": {"at": "2026-11-20T21:00:00+03:00", "mode": "linkedin", "sources": {},
+                                                   "archive": {"jobs": 1200, "rows": 3, "free_gb": 3700,
+                                                               "path": "E:\\Munfarid\\archive", "evil": "<x>"}}})
+    pa = storage.read("bot_state")["pc_archive"]
+    check("archive API: the PC's numbers stored (known fields only)",
+          pa["jobs"] == 1200 and pa["free_gb"] == 3700 and "evil" not in pa, pa)
     # the login is logged with no person: every page must still load (it broke the home page once)
     for path in ("overview", "users", "sources", "live", "jobs"):
         check(f"after a Telegram login: {path} loads", anon.req("GET", "/api/admin/dash/" + path)[0] == 200)

@@ -252,9 +252,15 @@
       badge(b.helper_ok ? 'good' : (helper.at ? 'warn' : 'idle'), b.helper_ok ? 'يعمل' : (helper.at ? 'متأخر' : 'لم يبدأ'));
     const helperSub = helper.error ? `آخر محاولة ${ago(helper.at)} · ${esc(helper.error)}` :
       helper.at ? 'آخر تشغيل ' + ago(helper.at) + (got ? ' · ' + esc(got) : '') : 'لم يشتغل بعد على جهازك';
+    // the PC archive on E: (jobs that left the live list are kept there in full)
+    const pa = b.pc_archive || {}, wait = (b.archive_outbox || {}).waiting || 0;
+    const archive = pa.error ? `<br>الأرشيف: ${esc(pa.error)}` :
+      pa.at ? `<br>الأرشيف على جهازي: ${n((pa.jobs || 0) + (pa.rows || 0))} وظيفة` +
+        (pa.free_gb != null ? ` · ${n(pa.free_gb)} GB فاضية` : '') + (wait ? ` · ${n(wait)} بانتظار النقل` : '') :
+      wait ? `<br>الأرشيف: ${n(wait)} وظيفة بانتظار جهازك` : '';
     return `<div class="status">${badge(...botState)}<div><b>البوت</b><span class="muted small">${botSub}</span></div></div>` +
       `<div class="status">${badge(b.cloud_ok ? 'good' : 'bad', b.cloud_ok ? 'يعمل' : 'متأخر')}<div><b>الجمع السحابي (كل ساعة)</b><span class="muted small">آخر تشغيل ${ago(b.cloud_last_run)}</span></div></div>` +
-      `<div class="status">${helperBadge}<div><b>جهازي (مرة يومياً 4 الفجر)</b><span class="muted small">${helperSub}</span></div></div>` +
+      `<div class="status">${helperBadge}<div><b>جهازي (مرة يومياً 4 الفجر)</b><span class="muted small">${helperSub}${archive}</span></div></div>` +
       linkedinCard(b);
   }
 

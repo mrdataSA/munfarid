@@ -57,6 +57,13 @@ create table if not exists rizq.events (
   data jsonb
 );
 create index if not exists events_ts on rizq.events (ts);
+create table if not exists rizq.archive_outbox (
+  id text primary key,
+  kind text not null,
+  data jsonb not null,
+  added_at timestamptz not null default now()
+);
+create index if not exists archive_outbox_added on rizq.archive_outbox (added_at);
 revoke all on all tables in schema rizq from public, anon, authenticated;
 revoke all on all sequences in schema rizq from public, anon, authenticated
 """
@@ -222,6 +229,78 @@ def forget_jobs(ids):
         _pg()._run("update rizq.jobs_all set link_kind = 'waiting', archived = true, updated_at = now() "
                    "where id = any(cast(:ids as text[]))", ids=ids[i:i + 5000])
     return len(ids)
+
+
+# ---------------------------------------------------------------- the PC archive (Raed's E: drive)
+# Full jobs that leave the live list ("job:<id>"), and, once the database nears the free plan's
+# 500 MB, the dashboard's archived rows ("row:<id>"), wait in rizq.archive_outbox until the helper on
+# Raed's PC has saved them (tools/pc_archive.py). Only what the PC confirmed is deleted here.
+
+OUTBOX_MAX = 60000                          # ~75 MB: about 20 days of the PC being off
+OFFLOAD_AT_BYTES = 350 * 1024 * 1024        # database size from which archived rows move to the PC
+OFFLOAD_BATCH = 5000
+
+
+def outbox_put(jobs):
+    """Queue full jobs for the PC archive. Returns how many were queued."""
+    if not _db() or not jobs:
+        return 0
+    pg = _pg()
+    have = (pg._run("select count(*) from rizq.archive_outbox") or [[0]])[0][0]
+    room = max(0, OUTBOX_MAX - have)
+    if room < len(jobs):
+        log.warning("PC archive outbox full (%d waiting): %d jobs not queued", have, len(jobs) - room)
+    rows = [{"id": "job:" + j["id"], "data": j} for j in jobs[-room:] if room and j.get("id")]
+    for i in range(0, len(rows), BATCH):
+        pg._run("insert into rizq.archive_outbox (id, kind, data) select x.id, 'job', x.data "
+                "from jsonb_to_recordset(cast(:rows as jsonb)) as x(id text, data jsonb) "
+                "on conflict (id) do update set data = excluded.data, added_at = now()",
+                rows=json.dumps(pg._no_nul(rows[i:i + BATCH]), ensure_ascii=False))
+    return len(rows)
+
+
+def offload_rows_if_full():
+    """Near the free plan's limit, the oldest archived dashboard rows are queued for the PC."""
+    if not _db():
+        return 0
+    pg = _pg()
+    size = (pg._run("select pg_database_size(current_database())") or [[0]])[0][0]
+    if size < OFFLOAD_AT_BYTES:
+        return 0
+    rows = pg._run("insert into rizq.archive_outbox (id, kind, data) select 'row:' || j.id, 'row', to_jsonb(j) "
+                   "from rizq.jobs_all j where j.archived and j.link_kind is distinct from 'waiting' "
+                   "order by j.updated_at limit :n on conflict (id) do nothing returning id", n=OFFLOAD_BATCH)
+    log.info("database %d MB: %d archived rows queued for the PC", size // 1048576, len(rows or []))
+    return len(rows or [])
+
+
+def outbox_take(limit=1000):
+    if not _db():
+        return []
+    rows = _pg()._run("select id, kind, data from rizq.archive_outbox order by added_at, id limit :n", n=limit)
+    return [{"id": r[0], "kind": r[1], "data": r[2]} for r in rows or []]
+
+
+def outbox_count():
+    return (_pg()._run("select count(*) from rizq.archive_outbox") or [[0]])[0][0] if _db() else 0
+
+
+def outbox_ack(ids):
+    """The PC saved these: delete them from the outbox (and archived rows from the dashboard table)."""
+    if not _db() or not ids:
+        return 0
+    pg = _pg()
+    ids = [i for i in ids if isinstance(i, str) and i.startswith(("job:", "row:"))][:5000]
+    gone = pg._run("delete from rizq.archive_outbox where id = any(cast(:ids as text[])) returning id, kind",
+                   ids=ids) or []
+    row_ids = [r[0][4:] for r in gone if r[1] == "row"]
+    if row_ids:
+        moved = pg._run("delete from rizq.jobs_all where archived and id = any(cast(:ids as text[])) returning id",
+                        ids=row_ids) or []
+        if moved:
+            with storage.edit("bot_state") as st:   # still counted in "everything collected"
+                st["rows_on_pc"] = int(st.get("rows_on_pc") or 0) + len(moved)
+    return len(gone)
 
 
 def archive_old(days=ARCHIVE_DAYS):
@@ -513,6 +592,8 @@ def bot_status():
     out["helper"] = helper
     li = st.get("helper_linkedin") or {}
     out["linkedin"] = li
+    out["pc_archive"] = st.get("pc_archive") or {}           # what the PC's E: archive holds
+    out["archive_outbox"] = st.get("archive_outbox") or {}   # jobs waiting in the cloud for the PC
     out["linkedin_ok"] = bool(li.get("at")) and not li.get("error") and (
         datetime.now().astimezone() - datetime.fromisoformat(li["at"])).total_seconds() < 2 * 3600
     out["helper_ok"] = bool(helper.get("at")) and (
@@ -596,7 +677,8 @@ def overview():
     return {
         "jobs": {"live": len(live_rows), "today": added.get(today, 0), "yesterday": added.get(yday, 0),
                  "week": week, "week_change": _pct(week, prev_week), "expired": status.get("expired", 0),
-                 "archived": status.get("archived", 0), "all": len(rows),
+                 "archived": status.get("archived", 0),
+                 "all": len(rows) + int(storage.read("bot_state").get("rows_on_pc") or 0),
                  "kinds": {k: kinds.get(k, 0) for k in LINK_KINDS},
                  "waiting": {k: wait.get(k, 0) for k in ("count", "resolved_today", "dropped_today", "for_helper")},
                  "via_helper": sum(1 for r in live_rows if r.get("via_helper")),

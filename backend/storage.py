@@ -48,6 +48,7 @@ COLLECTIONS = {
     "rate_limits": ("rate_limits.json", dict),     # cloud: login / post / report attempts per key (shared by all instances)
     "events": ("events.json", list),               # local mode only: bot events for the dashboard (cloud: rizq.events)
     "origin_wait": ("origin_wait.json", dict),     # collector: jobs waiting for their original link (collectors/waiting.py)
+    "archive_out": ("archive_out.json", list),     # collector: jobs that left the live list, until sent to the PC archive
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode
