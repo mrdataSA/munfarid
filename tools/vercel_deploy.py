@@ -69,15 +69,23 @@ def files():
     return sorted(out)
 
 
-def _call(method, path, token, team, body=None, headers=None):
+def _call(method, path, token, team, body=None, headers=None, retry=True):
+    """retry: a network hiccup (timeout, reset) is tried again up to 3 times. Off for creating the
+    deployment itself, which must never be sent twice; file uploads (by digest) and polls are safe."""
     sep = "&" if "?" in path else "?"
-    req = urllib.request.Request(f"{API}{path}{sep}teamId={team}", data=body, method=method,
-                                 headers={"Authorization": f"Bearer {token}", **(headers or {})})
-    try:
-        with urllib.request.urlopen(req, timeout=120) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        raise SystemExit(f"Vercel API {method} {path}: HTTP {e.code} {e.read()[:300]!r}")
+    for attempt in range(4 if retry else 1):
+        req = urllib.request.Request(f"{API}{path}{sep}teamId={team}", data=body, method=method,
+                                     headers={"Authorization": f"Bearer {token}", **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            raise SystemExit(f"Vercel API {method} {path}: HTTP {e.code} {e.read()[:300]!r}")
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if not retry or attempt == 3:
+                raise
+            print(f"Vercel API {method} {path}: {e}; retrying")
+            time.sleep(10 * (attempt + 1))
 
 
 def main():
@@ -97,7 +105,7 @@ def main():
     if "--preview" not in sys.argv:
         body["target"] = "production"
     dep = _call("POST", "/v13/deployments?forceNew=1&skipAutoDetectionConfirmation=1", token, team,
-                body=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+                body=json.dumps(body).encode(), headers={"Content-Type": "application/json"}, retry=False)
     dep_id = dep["id"]
     print(f"deployment {dep_id}: {len(manifest)} files uploaded, building...")
     deadline = time.time() + 600
