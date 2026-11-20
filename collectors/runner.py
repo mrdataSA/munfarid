@@ -26,7 +26,7 @@ ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at hal
 COMPANY_BEFORE_ALERT = 30  # new jobs without an employer: the AI reads the ad for it before alerting
 COMPANY_BACKFILL = 200     # stored jobs without an employer, per full run
 DEDUP_BEFORE_ALERT = 1000  # candidate pairs per source checked before adding (beyond: the job waits a run)
-DEDUP_BACKFILL = 600       # stored jobs' candidate pairs per full run (capped at 35% of the daily AI budget)
+DEDUP_BACKFILL = 600       # stored jobs' candidate pairs per full run (capped at 60% of the daily AI budget)
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
 
@@ -425,17 +425,17 @@ def run_all(only=None, fast=False):
                 _helper_done(src)
 
         if not fast:
-            try:  # stored jobs without an employer: the AI reads the whole ad for it
-                totals["companies"] = enrich.backfill_companies(COMPANY_BACKFILL)
-            except Exception:
-                log.warning("company backfill failed:\n%s", traceback.format_exc())
-            try:  # cross-source duplicates already stored (AI), newest first, within budget
+            try:  # cross-source duplicates already stored (AI), newest first, within budget (first: it shares the AI budget)
                 gone = dedup.backfill(DEDUP_BACKFILL)
                 totals["duplicates"] = totals.get("duplicates", 0) + len(gone)
                 if gone and config.DATABASE_URL:
                     analytics.drop_rows(gone)
             except Exception:
                 log.warning("duplicate backfill failed:\n%s", traceback.format_exc())
+            try:  # stored jobs without an employer: the AI reads the whole ad for it
+                totals["companies"] = enrich.backfill_companies(COMPANY_BACKFILL)
+            except Exception:
+                log.warning("company backfill failed:\n%s", traceback.format_exc())
             try:  # older jobs the rules left as "أخرى" / without skills, newest first, within budget
                 totals["enriched"] = enrich.backfill(ENRICH_BACKFILL)
             except Exception:

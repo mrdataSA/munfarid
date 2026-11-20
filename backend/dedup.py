@@ -29,9 +29,9 @@ log = logging.getLogger("rizq.dedup")
 WINDOW_DAYS = 14
 CROSS_DAYS = 3
 PER_JOB = 6
-PAIR_BATCH = 12
-TEXT_CHARS = 350
-BACKFILL_SHARE = 0.35      # the backfill of stored jobs never takes the daily AI budget past 35%
+PAIR_BATCH = 20
+TEXT_CHARS = 200
+BACKFILL_SHARE = 0.6       # the cleanup of stored jobs stops at 60% of the daily AI budget (40% kept for the bot and new jobs)
 LEGAL = {"شركه", "مؤسسه", "مجموعه", "مصنع", "company", "co", "ltd", "limited", "llc", "inc", "group", "corp",
          "corporation", "est", "establishment", "holding", "القابضه", "المحدوده", "محدوده", "ذ", "م", "the",
          "for", "and", "&", "ksa", "saudi", "arabia", "السعوديه", "العربيه"}
