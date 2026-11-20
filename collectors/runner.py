@@ -25,8 +25,8 @@ ORIGIN_FAST_SECONDS = 300
 ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at half the daily budget)
 COMPANY_BEFORE_ALERT = 30  # new jobs without an employer: the AI reads the ad for it before alerting
 COMPANY_BACKFILL = 200     # stored jobs without an employer, per full run
-DEDUP_BEFORE_ALERT = 60    # candidate pairs per source the AI checks for cross-source duplicates before alerting
-DEDUP_BACKFILL = 200       # stored jobs' candidate pairs per full run (capped at 35% of the daily AI budget)
+DEDUP_BEFORE_ALERT = 1000  # candidate pairs per source checked before adding (beyond: the job waits a run)
+DEDUP_BACKFILL = 600       # stored jobs' candidate pairs per full run (capped at 35% of the daily AI budget)
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
 
@@ -263,21 +263,29 @@ def _store_source(src, items, totals, sent_per_user):
     totals["ai_used"] = totals["ai_used"] or any(r is not None for r in ai_results)
 
 
-def _add_jobs(key, jobs, totals, sent_per_user):
-    """Store jobs that carry their original link, then alert (shared by sources and the waiting room)."""
+def _add_jobs(key, jobs, totals, sent_per_user, check_duplicates=True):
+    """Store jobs that carry their original link, then alert (shared by sources and the waiting room).
+    Every new job is checked for a twin from another source BEFORE it counts as added (dashboard,
+    alerts, the bot's copy): a duplicate is removed, a job the AI could not judge waits for the next run."""
     added = catalog.merge_collected(jobs) if jobs else []
     if added:
         try:   # the employer, when the ad names it but the site did not say (before the dashboard and alerts)
             enrich.fill_companies(added, COMPANY_BEFORE_ALERT)
         except Exception:
             log.warning("company search failed for %s:\n%s", key, traceback.format_exc())
+    if added and check_duplicates:
         try:   # the same vacancy already stored from another source, in other words or language: one copy
-            gone = set(dedup.remove(dedup.find(added, DEDUP_BEFORE_ALERT)))
-            if gone:
-                added = [j for j in added if j["id"] not in gone]
-                totals["duplicates"] = totals.get("duplicates", 0) + len(gone)
-        except Exception:
+            dupes, unchecked = dedup.check(added, DEDUP_BEFORE_ALERT)
+        except Exception:   # the check itself failed: nothing is added unchecked, all wait for the next run
             log.warning("duplicate check failed for %s:\n%s", key, traceback.format_exc())
+            dupes, unchecked = [], list(added)
+        gone = set(dedup.remove(dupes))
+        dedup.hold(unchecked, dedup.HELD_SINCE)
+        out = gone | {j["id"] for j in unchecked}
+        if out:
+            added = [j for j in added if j["id"] not in out]
+            totals["duplicates"] = totals.get("duplicates", 0) + len(gone)
+            totals["dedup_wait"] = totals.get("dedup_wait", 0) + len(unchecked)
     if added and config.DATABASE_URL:
         try:  # the owner's dashboard sees each new job as soon as it is stored
             analytics.sync_jobs(added)
@@ -314,6 +322,20 @@ def _process_waiting(fast, totals, sent_per_user):
     totals["origin_dropped"] = stats["dropped"]
     if ready:
         _add_jobs("_waiting", ready, totals, sent_per_user)
+
+
+def _process_dedup_wait(totals, sent_per_user):
+    """New jobs the AI could not check last run: checked again first (or added after 24 h)."""
+    again, late = dedup.release()
+    try:
+        if again:
+            _add_jobs("_dedup", again, totals, sent_per_user)
+        if late:
+            log.warning("%d jobs waited 24 h for the duplicate check: added without it", len(late))
+            _add_jobs("_dedup", late, totals, sent_per_user, check_duplicates=False)
+    except Exception:
+        dedup.hold(again + late, dedup.HELD_SINCE)   # nothing lost: back in the queue for the next run
+        raise
 
 
 def run_all(only=None, fast=False):
@@ -354,6 +376,10 @@ def run_all(only=None, fast=False):
                 _process_waiting(fast, totals, sent_per_user)
             except Exception:
                 log.warning("waiting room failed:\n%s", traceback.format_exc())
+            try:   # then the jobs that wait for the AI duplicate check
+                _process_dedup_wait(totals, sent_per_user)
+            except Exception:
+                log.warning("duplicate check queue failed:\n%s", traceback.format_exc())
         # opening relay pages for their original links: at most this long per run (all sources together)
         origin.RUN_BUDGET["until"] = time.time() + (ORIGIN_FAST_SECONDS if fast else ORIGIN_FULL_SECONDS)
         for src in sources:
@@ -427,6 +453,7 @@ def run_all(only=None, fast=False):
                    "jobs": totals["jobs"], "added": totals["added"], "notified_users": sum(1 for n in sent_per_user.values() if n),
                    "ai_used": totals["ai_used"], "enriched": totals.get("enriched", 0),
                    "companies": totals.get("companies", 0), "duplicates": totals.get("duplicates", 0),
+                   "dedup_wait": totals.get("dedup_wait", 0),
                    "seconds": round(time.time() - started, 1), "finished_at": storage.now_iso()}
         if fast:
             summary["fast"] = True

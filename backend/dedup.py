@@ -181,8 +181,12 @@ def judge(pairs):
     for start in range(0, len(todo), PAIR_BATCH):
         part = todo[start:start + PAIR_BATCH]
         payload = [{"key": str(i), "a": _ad(a), "b": _ad(b)} for i, (_, a, b) in enumerate(part)]
-        data = ai.chat_json(SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=30 * len(part) + 120,
-                            models=[ai.FALLBACK_MODEL, config.GROQ_MODEL])
+        try:
+            data = ai.chat_json(SYSTEM, json.dumps(payload, ensure_ascii=False), max_tokens=30 * len(part) + 120,
+                                models=[ai.FALLBACK_MODEL, config.GROQ_MODEL])
+        except ai.AIUnavailable as e:   # what was answered so far is kept; the rest stays unanswered
+            log.info("duplicate check stopped: %s", e)
+            break
         rows = [r for r in (data.get("results") if isinstance(data.get("results"), list) else []) if isinstance(r, dict)]
         keys = [str(r.get("key")) for r in rows]
         if len(keys) != len(set(keys)):
@@ -204,25 +208,64 @@ def _budget_share():
     return max(u["requests"] / max(u["request_limit"], 1), u["tokens"] / max(u["token_limit"], 1))
 
 
-def find(new_jobs, max_pairs, max_share=1.0):
-    """[(duplicate, kept)]: new jobs that the AI found to be a vacancy already stored."""
-    if not ai.enabled() or max_pairs <= 0 or not new_jobs or _budget_share() >= max_share:
-        return []
+def check(new_jobs, max_pairs=1000):
+    """Every new job checked before it is added. Returns (duplicates [(dup, kept)], unchecked jobs):
+    a job with a possible twin the AI could not judge (budget, outage, too many pairs) is "unchecked"
+    and must wait (hold) instead of being added. Jobs without any candidate are clearly not duplicates."""
+    if not ai.enabled() or not new_jobs:
+        return [], []   # no AI configured (local tests): the exact keys of merge_collected only
     stored = storage.read("jobs")
-    pairs = candidates(new_jobs, stored)[:max_pairs]
-    if not pairs:
-        return []
-    try:
-        same = judge(pairs)
-    except ai.AIUnavailable as e:
-        log.info("duplicate check stopped: %s", e)
-        return []
+    pairs = candidates(new_jobs, stored)
+    asked = pairs[:max_pairs]
+    same = judge(asked) if asked else {}
     dupes, gone = [], set()
-    for n, s in pairs:
+    for n, s in asked:
         if same.get(_pair_key(n, s)) and n["id"] not in gone and s["id"] not in gone:
             dupes.append((n, s))
             gone.add(n["id"])
-    return dupes
+    unchecked, seen = [], set()
+    for n, s in pairs:
+        if n["id"] not in gone and n["id"] not in seen and _pair_key(n, s) not in same:
+            seen.add(n["id"])
+            unchecked.append(n)
+    return dupes, unchecked
+
+
+# ---------------------------------------------------------------- holding jobs until they are checked
+
+MAX_HOLD_HOURS = 24   # a job never waits longer: after that it is added (the AI was down all day)
+
+
+def hold(jobs, since=None):
+    """Take jobs that could not be checked out of the store until the next run. since: {job id: the
+    time it was first held} (so the 24 h limit counts from the first time)."""
+    if not jobs:
+        return
+    ids = {j["id"] for j in jobs}
+    with storage.edit("jobs") as stored:
+        stored[:] = [j for j in stored if j["id"] not in ids]
+    now = storage.now_iso()
+    with storage.edit("dedup_wait") as wait:
+        have = {w["job"]["id"] for w in wait}
+        wait.extend({"since": (since or {}).get(j["id"]) or now, "job": j} for j in jobs if j["id"] not in have)
+    log.info("duplicate check: %d jobs wait for the AI (added once checked)", len(jobs))
+
+
+HELD_SINCE = {}   # job id -> first held, for the jobs released in this process (hold() reuses it)
+
+
+def release():
+    """Held jobs for this run: (to check again, waited MAX_HOLD_HOURS -> add without the AI)."""
+    from datetime import datetime, timedelta
+    wait = storage.read("dedup_wait")
+    if not wait:
+        return [], []
+    limit = (datetime.now().astimezone() - timedelta(hours=MAX_HOLD_HOURS)).isoformat(timespec="seconds")
+    HELD_SINCE.update({w["job"]["id"]: w.get("since") or "" for w in wait})
+    again = [w["job"] for w in wait if (w.get("since") or "") > limit]
+    late = [w["job"] for w in wait if (w.get("since") or "") <= limit]
+    storage.write("dedup_wait", [])
+    return again, late
 
 
 def remove(dupes):
@@ -277,13 +320,11 @@ def backfill(limit_pairs=200):
         if not pairs:
             continue
         limit_pairs -= len(pairs)
-        try:
-            same = judge(pairs)
-        except ai.AIUnavailable as e:
-            log.info("duplicate backfill stopped: %s", e)
-            break
+        same = judge(pairs)
         for n, s in pairs:
             if same.get(_pair_key(n, s)) and n["id"] not in removed and s["id"] not in removed:
                 out.append((n, s))
                 removed.add(n["id"])
+        if len(same) < len({_pair_key(n, s) for n, s in pairs}):
+            break   # the AI stopped (budget): the rest next time
     return remove(out)

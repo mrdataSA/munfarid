@@ -49,6 +49,7 @@ COLLECTIONS = {
     "events": ("events.json", list),               # local mode only: bot events for the dashboard (cloud: rizq.events)
     "origin_wait": ("origin_wait.json", dict),     # collector: jobs waiting for their original link (collectors/waiting.py)
     "archive_out": ("archive_out.json", list),     # collector: jobs that left the live list, until sent to the PC archive
+    "dedup_wait": ("dedup_wait.json", list),       # collector: new jobs waiting for the AI duplicate check (backend/dedup.py)
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode

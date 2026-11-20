@@ -169,7 +169,8 @@ try:
         ids = sorted(s["id"] for _, s in pairs)
         check("dedup candidates: Arabic/English title + employer in another language, never the same source",
               ids == ["d0", "d1"] or ids == ["d1"], ids)
-        gone = dedup.remove(dedup.find([new], 10))
+        dupes, unchecked = dedup.check([new])
+        gone = dedup.remove(dupes)
         kept = {j["id"]: j for j in storage.read("jobs")}
         check("dedup: the new copy removed, the stored one kept with both sources",
               gone == ["d2"] and "d2" not in kept and kept["d1"].get("also_on") == ["LinkedIn"]
@@ -178,9 +179,44 @@ try:
               "d9" in kept and not any(p["a"]["title"] == "مهندس مدني" or p["b"]["title"] == "مهندس مدني"
                                        for p in asked))
         n_asked = len(asked)
-        dedup.find([new], 10)
+        dedup.check([new])
         check("dedup: a pair is asked once (cached)", len(asked) == n_asked, len(asked))
         check("dedup: counted for the dashboard", storage.read("bot_state")["ai_duplicates"]["total"] == 1)
+
+        # the AI is down: a new job with a possible twin is NOT added; it waits and is checked next run
+        from collectors import runner
+
+        def down(*a, **kw):
+            raise ai.AIUnavailable("daily Groq budget reached")
+        ai.chat_json = down
+        twin = dict(new, id="d3", url="https://l.example/3", title="Accountant", company="STC", city="Riyadh")
+        storage.write("dedup_wait", [])
+        runner.bot.submit_new_jobs = lambda jobs: None
+        runner.notifier.notify_new_jobs = lambda jobs, sent: 0
+        totals = {"jobs": 0, "added": 0, "sent": 0}
+        runner._add_jobs("_test", [twin], totals, {})
+        stored_ids = {j["id"] for j in storage.read("jobs")}
+        wait = storage.read("dedup_wait")
+        check("dedup: AI down -> the job waits, not added (no alert, not stored)",
+              totals["added"] == 0 and "d3" not in stored_ids and [w["job"]["id"] for w in wait] == ["d3"], (totals, wait))
+        lone = {"id": "d5", "title": "طيار", "company": "طيران أديل", "city": "جدة", "source": "LinkedIn",
+                "posted_date": "2026-11-19", "url": "https://l.example/5"}
+        totals = {"jobs": 0, "added": 0, "sent": 0}
+        runner._add_jobs("_test", [lone], totals, {})
+        check("dedup: a job without any possible twin is added even with the AI down", totals["added"] == 1, totals)
+        ai.chat_json = fake_chat   # the AI is back: the waiting job is checked and found to be a duplicate
+        totals = {"jobs": 0, "added": 0, "sent": 0}
+        runner._process_dedup_wait(totals, {})
+        stored_ids = {j["id"] for j in storage.read("jobs")}
+        check("dedup: next run, the waiting job is checked (a duplicate: removed, not added)",
+              totals["added"] == 0 and totals.get("duplicates") == 1 and "d3" not in stored_ids
+              and storage.read("dedup_wait") == [], totals)
+        ai.chat_json = down   # down for 24 h: the job is added anyway (never lost)
+        storage.write("dedup_wait", [{"since": "2026-11-01T00:00:00+03:00", "job": dict(twin, id="d4", url="https://l.example/4")}])
+        totals = {"jobs": 0, "added": 0, "sent": 0}
+        runner._process_dedup_wait(totals, {})
+        check("dedup: after 24 h of waiting the job is added (never lost)", totals["added"] == 1
+              and storage.read("dedup_wait") == [], totals)
     finally:
         ai.enabled, ai.chat_json, ai.usage_summary = real
 
