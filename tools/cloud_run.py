@@ -172,6 +172,12 @@ def main():
     else:
         full = datetime.now().hour % FULL_EVERY_HOURS == 0
     summary = runner.run_all(fast=not full)
+    if full:   # the workflow reads this: GitHub may start the hourly run late or skip one,
+        try:   # so a full run is due when the last one is ~3 h old, not only at hour % 3
+            with open(os.path.join(config.STORE_DIR, ".last_full"), "w") as f:
+                f.write(str(int(time.time())))
+        except OSError:
+            log.warning("could not write the last-full marker")
     print(json.dumps(summary, ensure_ascii=False))
     if not bot.flush_alerts(timeout=600):
         log.warning("some instant alerts were still pending (the daily message still has them)")

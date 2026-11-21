@@ -48,7 +48,9 @@ jobs:
         id: mode
         run: |
           hour=$(TZ=Asia/Riyadh date +%H)
-          if [ "${{ inputs.full }}" = "true" ] || [ $((10#$hour % 3)) -eq 0 ]; then echo "full=1" >> "$GITHUB_OUTPUT"; else echo "full=0" >> "$GITHUB_OUTPUT"; fi
+          # GitHub may start a scheduled run late or skip it: also full when the last full run is 2h50m+ old
+          last=$(cat data/store/.last_full 2>/dev/null || echo 0); age=$(( $(date +%s) - ${last:-0} ))
+          if [ "${{ inputs.full }}" = "true" ] || [ $((10#$hour % 3)) -eq 0 ] || [ $age -ge 10200 ]; then echo "full=1" >> "$GITHUB_OUTPUT"; else echo "full=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: Browser for JavaScript pages (full runs)
         if: steps.mode.outputs.full == '1'
