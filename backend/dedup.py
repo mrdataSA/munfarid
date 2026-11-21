@@ -193,6 +193,29 @@ def _pair_key(a, b):
     return "dup:" + hashlib.sha1("|".join(sorted((a["id"], b["id"]))).encode()).hexdigest()
 
 
+PAIRS_MAX = 200000   # ~60 bytes each: the answers live in their own file, not in ai_cache (6000 max, it pushed them out)
+
+
+def _known():
+    """Every pair answer so far: the own store, plus older answers still in ai_cache."""
+    out = {k: v for k, v in storage.read("ai_cache").items() if k.startswith("dup:") and isinstance(v, bool)}
+    out.update(storage.read("dedup_pairs"))
+    return out
+
+
+def _save_pairs(entries):
+    with storage.edit("dedup_pairs") as c:
+        c.update(entries)
+        if len(c) > PAIRS_MAX:
+            for old in list(c)[: len(c) - PAIRS_MAX]:
+                del c[old]
+
+
+def _usage():
+    u = ai.usage_summary()
+    return "%d/%d requests, %d/%d tokens" % (u["requests"], u["request_limit"], u["tokens"], u["token_limit"])
+
+
 def _ad(j):
     return {"title": j.get("title", ""), "employer": j.get("company", ""), "city": j.get("city", ""),
             "date": (j.get("posted_date") or "")[:10],
@@ -201,7 +224,7 @@ def _ad(j):
 
 def judge(pairs):
     """{pair key: True/False} for the given pairs (cached answers first, then the AI in batches)."""
-    cache = storage.read("ai_cache")
+    cache = _known()
     out, todo = {}, []
     for a, b in pairs:
         k = _pair_key(a, b)
@@ -230,7 +253,7 @@ def judge(pairs):
             if r is not None and isinstance(r.get("same"), bool):
                 out[k] = new_cache[k] = r["same"]
         if new_cache:
-            ai.cache_update(new_cache)
+            _save_pairs(new_cache)
     return out
 
 
@@ -249,6 +272,8 @@ def check(new_jobs, max_pairs=1000):
     pairs = candidates(new_jobs, stored)
     asked = pairs[:max_pairs]
     same = judge(asked) if asked else {}
+    log.info("duplicate check: %d new jobs, %d candidate pairs, %d answered (AI today: %s)",
+             len(new_jobs), len(pairs), len(same), _usage())
     dupes, gone = [], set()
     for n, s in asked:
         if same.get(_pair_key(n, s)) and n["id"] not in gone and s["id"] not in gone:
@@ -337,7 +362,7 @@ def backlog_pairs():
     """Every candidate pair among ALL stored jobs not judged yet (newer job first), plus the pairs the
     AI already called the same whose two jobs are both still stored (removed without asking again)."""
     stored = storage.read("jobs")
-    cache = storage.read("ai_cache")
+    cache = _known()
     jobs = sorted(stored, key=lambda j: j.get("collected_at") or "", reverse=True)
     todo, known_same, seen = [], [], set()
     for n, s in candidates(jobs, stored, among_new=True):
@@ -358,6 +383,7 @@ def backfill(limit_pairs=600):
     """Clean the stored jobs: every candidate pair not judged yet, newest first, up to limit_pairs a run
     and BACKFILL_SHARE of the daily AI budget. What is left is recorded (the dashboard and the next run)."""
     todo, known_same = backlog_pairs()
+    log.info("duplicate cleanup: %d pairs to judge (AI today: %s)", len(todo), _usage())
     out, removed = [], set()
 
     def take(pairs, same):
@@ -377,11 +403,11 @@ def backfill(limit_pairs=600):
         take(part, same)
         if len(same) < len({_pair_key(n, s) for n, s in part}):
             break   # the AI stopped (budget): the rest next time
-    cache = storage.read("ai_cache")
+    cache = _known()
     left = sum(1 for n, s in todo if n["id"] not in removed and s["id"] not in removed
                and not isinstance(cache.get(_pair_key(n, s)), bool))
     with storage.edit("bot_state") as st:
         d = st.get("ai_duplicates") if isinstance(st.get("ai_duplicates"), dict) else {}
         st["ai_duplicates"] = dict(d, backlog=left, backlog_at=storage.now_iso())
-    log.info("duplicate cleanup: %d pairs judged, %d left to judge", len(todo) - left, left)
+    log.info("duplicate cleanup: %d pairs judged, %d left to judge (AI today: %s)", len(todo) - left, left, _usage())
     return remove(out)

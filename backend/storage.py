@@ -50,6 +50,7 @@ COLLECTIONS = {
     "origin_wait": ("origin_wait.json", dict),     # collector: jobs waiting for their original link (collectors/waiting.py)
     "archive_out": ("archive_out.json", list),     # collector: jobs that left the live list, until sent to the PC archive
     "dedup_wait": ("dedup_wait.json", list),       # collector: new jobs waiting for the AI duplicate check (backend/dedup.py)
+    "dedup_pairs": ("dedup_pairs.json", dict),     # collector: AI answers "same vacancy?" per job pair (own cap)
 }
 
 # Shared between the bot/site and the collectors: Postgres in cloud mode
@@ -68,7 +69,7 @@ def _snapshot(name):
 
 
 # Caches can be rebuilt; a corrupt cache is reset instead of blocking the app
-REBUILDABLE = {"ai_cache", "sources_status", "bot_state", "link_tokens", "origin_cache", "alerts_daily",
+REBUILDABLE = {"ai_cache", "dedup_pairs", "sources_status", "bot_state", "link_tokens", "origin_cache", "alerts_daily",
                "programs_watch", "bot_sessions"}
 
 
