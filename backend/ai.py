@@ -11,6 +11,7 @@ URLs are never taken from the model (they come from the source itself).
 import hashlib
 import json
 import re
+import sys
 import threading
 import time
 import urllib.error
@@ -61,7 +62,7 @@ def _usage_today(cache):
 def usage_summary():
     cache = storage.read("ai_cache")
     u = cache.get("_usage", {}).get(date.today().isoformat(), {"requests": 0, "tokens": 0})
-    return {"requests": u["requests"], "tokens": u["tokens"],
+    return {"requests": u["requests"], "tokens": u["tokens"], "by": dict(u.get("by") or {}),
             "request_limit": config.GROQ_DAILY_LIMIT, "token_limit": DAILY_TOKEN_BUDGET}
 
 
@@ -71,11 +72,25 @@ def _check_budget():
         raise AIUnavailable("daily Groq budget reached")
 
 
+def _caller():
+    """Which part of the app asked (module.function outside this file): the daily tally shows who uses the budget."""
+    f, inner = sys._getframe(2), None
+    while f and f.f_globals.get("__name__") == __name__:
+        if f.f_code.co_name not in ("chat_json", "_record_usage"):
+            inner = f.f_code.co_name          # e.g. ai.extract_jobs: named after what it does
+        f = f.f_back
+    outer = ("%s.%s" % (f.f_globals.get("__name__", "?").rsplit(".", 1)[-1], f.f_code.co_name)) if f else "?"
+    return ("ai.%s<%s" % (inner, outer)) if inner else outer
+
+
 def _record_usage(tokens):
+    who = _caller()
     with storage.edit("ai_cache") as cache:
         u = _usage_today(cache)
         u["requests"] += 1
         u["tokens"] += int(tokens or 0)
+        by = u.setdefault("by", {})
+        by[who] = by.get(who, 0) + int(tokens or 0)
 
 
 def _post(body, timeout=60):

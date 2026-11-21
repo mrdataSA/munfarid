@@ -460,6 +460,11 @@ def run_all(only=None, fast=False):
         with storage.edit("sources_status") as st:
             st["_last_fast_run" if fast else "_last_run"] = summary
         log.info("collection done: %s", summary)
+        try:   # who used today's AI budget (tokens), biggest first
+            by = sorted(ai.usage_summary().get("by", {}).items(), key=lambda x: -x[1])
+            log.info("AI tokens today by caller: %s", ", ".join("%s %d" % x for x in by[:12]) or "none")
+        except Exception:
+            pass
         return summary
     finally:
         plock.release()
