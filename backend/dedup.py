@@ -27,7 +27,7 @@ from . import ai, config, normalize, storage, titles
 
 log = logging.getLogger("rizq.dedup")
 
-WINDOW_DAYS = 14
+WINDOW_DAYS = config.JOB_MAX_AGE_DAYS   # the whole stored period (Raed, 2026-11-21; was 14 days)
 CROSS_DAYS = 3
 PER_JOB = 6
 PAIR_BATCH = 20
