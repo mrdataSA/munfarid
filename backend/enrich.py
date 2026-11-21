@@ -267,22 +267,18 @@ def fill_roles(limit=60, max_share=ROLES_SHARE):
     if not ai.enabled() or limit <= 0:
         return 0
     jobs = sorted(storage.read("jobs"), key=lambda j: j.get("collected_at") or "", reverse=True)
-    todo = []
+    ext = storage.read("ai_ext")   # answers sent back for the published leftover work (Claude on Raed's PC)
+    todo, found = [], {}
     for j in jobs:
         if j.get("roles_ai"):
             continue
         d = jobkind.describe(j)
         if d["category"] == "job" and d["announce"] and not d["roles"]:
-            todo.append(j)
-        if len(todo) >= limit:
-            break
-    found = {}
-    ext = storage.read("ai_ext")   # answers sent back for the published leftover work (Claude on Raed's PC)
-    for j in todo:
-        got = ext.get("roles:" + j["id"])
-        if isinstance(got, list):
-            found[j["id"]] = _checked_roles(j, got)
-    todo = [j for j in todo if j["id"] not in found]
+            got = ext.get("roles:" + j["id"])
+            if isinstance(got, list):          # answered already: taken now, not counted in the limit
+                found[j["id"]] = _checked_roles(j, got)
+            elif len(todo) < limit:
+                todo.append(j)
     for start in range(0, len(todo), ROLES_BATCH):
         if _budget_used_share() >= max_share:
             break
