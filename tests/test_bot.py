@@ -754,6 +754,11 @@ try:
         check("excel: the matched role and the jobs inside", "محلل نظم المعلومات" in sheet and "محلل بيانات" in sheet)
     finally:
         tg.send_document = real_doc
+    check("one role of generic words is a job, not an announcement",
+          not jobkind.read({"title": "Administrator"})["announce"]
+          and not jobkind.read({"title": "Executive Assistant", "company": "ALESAYI"})["announce"]
+          and jobkind.read({"title": "وظائف شاغرة لحملة الدبلوم فأعلى"})["announce"]
+          and titles.match({"id": "g1", "title": "مدير مطعم", "company": "مطعم"}, titles.compile_query(["مدير مطعم"])) == 2)
     check("daily harvest: only jobs posted today or yesterday",
           bot.is_fresh({"posted_date": date.today().isoformat()})
           and bot.is_fresh({"posted_date": (date.today() - timedelta(days=1)).isoformat()})

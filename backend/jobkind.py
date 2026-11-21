@@ -17,7 +17,7 @@ import threading
 
 from . import normalize
 
-VERSION = 2      # stored "category_v": a job read by older rules is read again
+VERSION = 3      # stored "category_v": a job read by older rules is read again
 
 CATEGORIES = {   # key -> (bot button, section title)
     "coop": ("🎓 التدريب التعاوني", "التدريب التعاوني لطلاب الجامعات"),
@@ -159,7 +159,11 @@ def is_announcement(title, company=""):
     """An ad of jobs whose title names no role: its roles are in the text."""
     from . import titles   # late: titles imports normalize only, but keep the graph simple
     rw = role_words(title, company)
-    return not titles.useful([titles._strip_prefix(w) for w in rw])
+    if titles.useful([titles._strip_prefix(w) for w in rw]):
+        return False
+    # "Administrator", "Executive Assistant", "مدير" + employer "مطعم": a plain title of generic words is ONE
+    # role; only ad wording ("وظائف", "فرص", "تعلن", "hiring", ...) makes it an announcement of several jobs
+    return not rw or bool(titles.GENERIC_TITLE_RE.search(normalize.norm(title)))
 
 
 # ---------------------------------------------------------------- roles listed in the text
