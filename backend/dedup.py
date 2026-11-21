@@ -20,7 +20,8 @@ sources in different words or languages ("محاسب" / "Accountant", "STC" / "�
 import hashlib
 import json
 import logging
-from datetime import date
+import re
+from datetime import date, datetime, timezone
 
 from . import ai, config, normalize, storage, titles
 
@@ -30,8 +31,12 @@ WINDOW_DAYS = 14
 CROSS_DAYS = 3
 PER_JOB = 6
 PAIR_BATCH = 20
-TEXT_CHARS = 200
+TEXT_CHARS = 100          # title + employer + city decide most pairs; announcements get more text (ANNOUNCE)
+ANNOUNCE_CHARS = 300
+ANNOUNCE = re.compile(r"وظائف|شواغر|فرص|تعلن|برنامج|jobs|vacancies|positions|openings", re.I)
 BACKFILL_SHARE = 0.6       # the cleanup of stored jobs stops at 60% of the daily AI budget (40% kept for the bot and new jobs)
+LATE_SHARE = 0.9           # ... and at 90% in the last hours before the budget resets (00:00 UTC = 03:00 Riyadh):
+LATE_FROM_UTC_HOUR = 20    # what is not used by then is lost anyway
 LEGAL = {"شركه", "مؤسسه", "مجموعه", "مصنع", "company", "co", "ltd", "limited", "llc", "inc", "group", "corp",
          "corporation", "est", "establishment", "holding", "القابضه", "المحدوده", "محدوده", "ذ", "م", "the",
          "for", "and", "&", "ksa", "saudi", "arabia", "السعوديه", "العربيه"}
@@ -219,7 +224,8 @@ def _usage():
 def _ad(j):
     return {"title": j.get("title", ""), "employer": j.get("company", ""), "city": j.get("city", ""),
             "date": (j.get("posted_date") or "")[:10],
-            "text": normalize.one_line(j.get("raw_text") or j.get("description") or "", TEXT_CHARS)}
+            "text": normalize.one_line(j.get("raw_text") or j.get("description") or "",
+                                       ANNOUNCE_CHARS if ANNOUNCE.search(j.get("title") or "") else TEXT_CHARS)}
 
 
 def judge(pairs):
@@ -379,6 +385,12 @@ def backlog_pairs():
     return todo, known_same
 
 
+def cleanup_share(now=None):
+    """The part of the day's AI budget the cleanup may reach: more late in the budget day (unused = lost)."""
+    hour = (now or datetime.now(timezone.utc)).hour
+    return LATE_SHARE if hour >= LATE_FROM_UTC_HOUR else BACKFILL_SHARE
+
+
 def backfill(limit_pairs=600):
     """Clean the stored jobs: every candidate pair not judged yet, newest first, up to limit_pairs a run
     and BACKFILL_SHARE of the daily AI budget. What is left is recorded (the dashboard and the next run)."""
@@ -395,7 +407,7 @@ def backfill(limit_pairs=600):
     take(known_same, {_pair_key(n, s): True for n, s in known_same})
     step = PAIR_BATCH * 10
     for start in range(0, min(len(todo), limit_pairs), step):
-        if _budget_share() >= BACKFILL_SHARE:
+        if _budget_share() >= cleanup_share():
             break
         part = [(n, s) for n, s in todo[start:min(start + step, limit_pairs)]
                 if n["id"] not in removed and s["id"] not in removed]

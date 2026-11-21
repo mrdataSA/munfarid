@@ -238,6 +238,16 @@ try:
     finally:
         ai.enabled, ai.chat_json, ai.usage_summary = real
 
+    # --- cleanup budget: 60% most of the day, 90% in the last hours before the 00:00 UTC reset
+    from datetime import datetime as _dt, timezone as _tz
+    check("dedup: cleanup share 60% by day, 90% late (unused budget is lost at the reset)",
+          dedup.cleanup_share(_dt(2026, 11, 21, 1, tzinfo=_tz.utc)) == 0.6
+          and dedup.cleanup_share(_dt(2026, 11, 21, 21, tzinfo=_tz.utc)) == 0.9)
+    long = "أ" * 1000
+    check("dedup: short text for one role, longer for an announcement",
+          len(dedup._ad({"title": "محاسب", "raw_text": long})["text"]) <= 101
+          and len(dedup._ad({"title": "أرامكو تعلن عن وظائف", "raw_text": long})["text"]) > 200)
+
     # --- the bot's slim copy: 700 characters of text, experience read from the whole text first
     from tools import cloud_run
     s = cloud_run.slim_job({"id": "s1", "title": "محاسب", "description": "أ" * 1500 + " خبرة 5 سنوات " + "ب" * 1500,
