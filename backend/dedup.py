@@ -227,8 +227,19 @@ def absorb_ext():
 
 def todo_pairs(limit=TODO_PAIRS):
     """The stored-job pairs still not judged, as the AI would see them (for ai_todo)."""
+    known = _known()
+    held = [w["job"] for w in storage.read("dedup_wait") if isinstance(w, dict) and isinstance(w.get("job"), dict)]
+    # new jobs waiting for their check come first: they are not added (no alert) until it is done
+    first = [(n, s) for n, s in (candidates(held, storage.read("jobs")) if held else [])
+             if not isinstance(known.get(_pair_key(n, s)), bool)]
     todo, _ = backlog_pairs()
-    return [{"key": _pair_key(n, s), "a": _ad(n), "b": _ad(s)} for n, s in todo[:limit]]
+    out, seen = [], set()
+    for n, s in first + todo:
+        k = _pair_key(n, s)
+        if k not in seen:
+            seen.add(k)
+            out.append({"key": k, "a": _ad(n), "b": _ad(s)})
+    return out[:limit]
 
 
 def _save_pairs(entries):
