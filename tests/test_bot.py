@@ -19,7 +19,7 @@ TMP = tempfile.mkdtemp(prefix="rizq-bot-test-")
 os.environ["RIZQ_DATA_DIR"] = TMP
 sys.path.insert(0, ROOT)
 
-from backend import ai, bot, config, storage, titles  # noqa: E402
+from backend import ai, bot, config, jobkind, storage, titles  # noqa: E402
 from backend import telegram_bot as tg  # noqa: E402
 
 results = []
@@ -691,6 +691,71 @@ try:
     c804 = bot.card(next(j for j in bot._jobs() if j["id"] == "j804"))
     check("card: a channel's link is an apply link, not 'the channel's ad'", "رابط التقديم" in c804
           and "forms.gle" in c804, c804)
+
+    # ------------------------------------------------------------ precise matching + other sections (Raed, 2026-11-21)
+    R = 9301
+    storage.write("jobs", storage.read("jobs") + [
+        job(901, "وظائف بصفة مدير حساب مبيعات SAP متوفرة في الشركة الوطنية لأنظمة المعلومات",
+            company="الشركة الوطنية لأنظمة المعلومات"),
+        job(902, "وظائف بائع إلكترونيات في شركة كبرى بقطاع التجزئة", company="شركة كبرى بقطاع التجزئة",
+            raw_text="مطلوب بائع إلكترونيات، خبرة في تحليل البيانات ميزة"),
+        job(903, "محلل نظم المعلومات", company="شركة تودو أوبس", days=1),
+        job(904, "برنامج مصرفي المستقبل", raw_text="برنامج تدريبي لحديثي التخرج يشمل تحليل البيانات"),
+        job(905, "شركة تكامل القابضة تعلن 8 وظائف شاغرة لحملة البكالوريوس في الرياض", company="شركة تكامل القابضة",
+            raw_text="الوظائف المتاحة:\n1- محلل بيانات\n2- محاسب\nالشروط:\n- خبرة سنتين", days=1),
+        job(906, "برنامج مستقبلي - دورات تدريبية", company="وزارة الاتصالات"),
+        job(907, "برنامج التدريب التعاوني للعام 1448", company="الديوان العام للمحاسبة"),
+        job(908, "Data Analyst", company="DYNEX Arabia", days=5),
+        job(909, "وظائف هيئة الزكاة والضريبة والجمارك", company="هيئة الزكاة والضريبة والجمارك",
+            raw_text="تعلن الهيئة عن وظائف إدارية وتقنية"),
+    ])
+    bot.handle_update(msg(R, "/start"))
+    with bot._edit_sub(R) as s:
+        s["titles"] = [{"title": "محلل بيانات", "variants": ["محلل بيانات", "data analyst", "تحليل بيانات"], "from": "user"},
+                       {"title": "محلل نظم المعلومات", "variants": ["محلل نظم المعلومات", "نظم المعلومات",
+                                                                   "systems analyst"], "from": "user"}]
+        bot._set_cities(s, [])
+        s["exp"] = ""
+    got = [j["id"] for j in bot.search(bot.get_sub(R), bot._jobs())]
+    check("precise: employer name is not the role (sales job at an information-systems company)", "j901" not in got, got)
+    check("precise: a job whose text mentions the field is not a match", "j902" not in got, got)
+    check("precise: the same title and its other names match", "j903" in got and "j908" in got, got)
+    check("precise: training programme / courses / coop are not jobs",
+          not {"j904", "j906", "j907"} & set(got), got)
+    check("precise: announcement matched by a role it lists", "j905" in got, got)
+    check("precise: announcement naming no role is not shown", "j909" not in got, got)
+    c905 = bot.card(next(j for j in bot._jobs() if j["id"] == "j905"), "", bot._query_of(bot.get_sub(R)))
+    check("card: names the role that fits in an announcement", "الوظيفة المناسبة لك" in c905 and "محلل بيانات" in c905, c905)
+    cats = {j["id"]: jobkind.describe(j)["category"] for j in bot._jobs() if j["id"] in ("j904", "j906", "j907")}
+    check("other sections: programme / course / coop", cats == {"j904": "training", "j906": "course", "j907": "coop"}, cats)
+    sent.clear()
+    bot.handle_update(msg(R, bot.BTN_OTHER))
+    kb = last_markup(R)
+    datas = [b.get("callback_data") for row in kb.get("inline_keyboard", []) for b in row]
+    check("other: one button per section", "oth:coop" in datas and "oth:tamheer" in datas and "oth:course" in datas, datas)
+    bot.handle_update(cb(R, "oth:coop"))
+    check("other: the section lists its items", "التدريب التعاوني" in texts_to(R)[-1]
+          and "برنامج التدريب التعاوني" in texts_to(R)[-1], texts_to(R)[-1][:200])
+    docs = []
+    real_doc = tg.send_document
+    tg.send_document = lambda chat_id, name, data, caption="", mime="", http_timeout=60: docs.append((chat_id, name, data))
+    try:
+        bot.handle_update(msg(R, bot.BTN_JOBS))
+        kb = last_markup(R)
+        check("jobs: Excel button under the results",
+              any(b.get("callback_data") == "xls" for row in kb.get("inline_keyboard", []) for b in row), kb)
+        bot.handle_update(cb(R, "xls"))
+        check("excel: one .xlsx file of all my jobs", len(docs) == 1 and docs[0][1].endswith(".xlsx")
+              and docs[0][2][:2] == b"PK", docs[:1])
+        import zipfile as _zf, io as _io
+        sheet = _zf.ZipFile(_io.BytesIO(docs[0][2])).read("xl/worksheets/sheet1.xml").decode("utf-8") if docs else ""
+        check("excel: the matched role and the jobs inside", "محلل نظم المعلومات" in sheet and "محلل بيانات" in sheet)
+    finally:
+        tg.send_document = real_doc
+    check("daily harvest: only jobs posted today or yesterday",
+          bot.is_fresh({"posted_date": date.today().isoformat()})
+          and bot.is_fresh({"posted_date": (date.today() - timedelta(days=1)).isoformat()})
+          and not bot.is_fresh({"posted_date": (date.today() - timedelta(days=3)).isoformat()}))
 
     # ------------------------------------------------------------ hygiene
     src = open(os.path.join(ROOT, "backend", "bot.py"), encoding="utf-8").read() + \

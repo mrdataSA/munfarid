@@ -321,19 +321,19 @@ _job_lock = threading.Lock()
 
 
 def _words_of(job):
-    """(title words, body words or None) for a job, cached by id + title."""
-    key = (job.get("id"), job.get("title"))
+    """(category, role tokens, [(role, role tokens)] of an announcement) for a job, cached by id + title.
+    A job is matched on its own role words only (backend/jobkind.py): never on its employer's name or
+    city ("... لدى الشركة الوطنية لأنظمة المعلومات" is not a systems analyst job), never on its text."""
+    from . import jobkind
+    key = (job.get("id"), job.get("title"), job.get("company"), job.get("category_v"))
     with _job_lock:
         hit = _job_words.get(key)
     if hit is not None:
         return hit
-    title = job.get("title") or ""
-    tw = tokens(title)
-    bw = None
-    if GENERIC_TITLE_RE.search(normalize.norm(title)):
-        body = (job.get("raw_text") or job.get("description") or "")[:700]
-        bw = tokens(body) if body else None
-    hit = (tw, bw)
+    d = jobkind.describe(job)
+    rw = tokens(" ".join(jobkind.role_words(job.get("title") or "", job.get("company") or "")))
+    roles = [(r, tokens(r)) for r in d["roles"]] if d["announce"] else []
+    hit = (d["category"], rw if not d["announce"] else [], [(r, t) for r, t in roles if t])
     with _job_lock:
         if len(_job_words) > 30000:
             _job_words.clear()
@@ -342,12 +342,17 @@ def _words_of(job):
 
 
 def compile_query(variants):
-    """List of variant word lists (skipping empty / generic-only ones, except the user's own)."""
-    out, seen = [], set()
+    """List of variant word lists (skipping empty / generic-only ones, except the user's own, and
+    names broader than the user's own title: "نظم المعلومات" is a field, not "محلل نظم المعلومات")."""
+    out, seen, own = [], set(), None
     for i, v in enumerate(variants):
         vt = tokens(v)
         k = " ".join(vt)
         if not vt or k in seen or (i > 0 and not useful(vt)):
+            continue
+        if i == 0:
+            own = set(vt)
+        elif own and set(vt) < own:
             continue
         seen.add(k)
         out.append(vt)
@@ -355,10 +360,24 @@ def compile_query(variants):
 
 
 def match(job, query):
-    """2 = a variant is in the title, 1 = in the text of a generic-titled post, 0 = no."""
-    tw, bw = _words_of(job)
-    if any(_variant_hits(vt, tw) for vt in query):
+    """2 = a variant is in the job's own title, 1 = in a role an announcement lists, 0 = no.
+    Only jobs: training, tamheer, courses, scholarships and admissions are other sections."""
+    cat, rw, roles = _words_of(job)
+    if cat != "job":
+        return 0
+    if rw and any(_variant_hits(vt, rw) for vt in query):
         return 2
-    if bw and any(_phrase_hits(vt, bw) for vt in query):
+    if any(_variant_hits(vt, t) for vt in query for _, t in roles):
         return 1
     return 0
+
+
+def matched_role(job, query):
+    """The role of an announcement that matched (shown on the card: "الوظيفة: محلل بيانات"), else ""."""
+    cat, rw, roles = _words_of(job)
+    if rw or not query:
+        return ""
+    for r, t in roles:
+        if any(_variant_hits(vt, t) for vt in query):
+            return r
+    return ""

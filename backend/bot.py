@@ -35,7 +35,7 @@ import time
 from collections import Counter
 from datetime import date, datetime, timedelta
 
-from . import ai, analytics, catalog, config, cvtext, normalize, owner, storage, titles, users
+from . import ai, analytics, catalog, config, cvtext, jobkind, normalize, owner, storage, titles, users, xlsx
 from . import telegram_bot as tg
 
 log = logging.getLogger("rizq.bot")
@@ -58,19 +58,22 @@ MAX_FEEDS = 200
 SESSION_DAYS = 3
 DIGEST_MARGIN = timedelta(minutes=15)  # jobs stored just before the last digest; "sent" removes repeats
 MAX_TEXT = 3900                 # Telegram's limit is 4096 characters
+FRESH_DAYS = 1                  # alerts carry only the day's harvest: jobs posted today or yesterday
+XLS_MAX = 3000                  # rows in the "all my jobs" Excel file
 
 BTN_JOBS = "🔎 وظائفي"
 BTN_ALERTS = "🔔 تنبيهاتي"
 BTN_CV = "📄 السيرة الذاتية (قريباً)"
 BTN_SOURCES = "📚 المصادر"
 BTN_HELP = "❓ طريقة الاستخدام"
+BTN_OTHER = "🗂️ أخرى"
 # Buttons of the older keyboard (still on people's screens until the next message replaces it)
 BTN_TITLES = "✏️ مسمياتي"
 BTN_SETTINGS = "⚙️ التنبيهات"
 BTN_CV_OLD = "📄 سيرتي"
 MAIN_KB = {"keyboard": [[{"text": BTN_JOBS}, {"text": BTN_ALERTS}],
                         [{"text": BTN_SOURCES}, {"text": BTN_HELP}],
-                        [{"text": BTN_CV}]],
+                        [{"text": BTN_OTHER}, {"text": BTN_CV}]],
            "resize_keyboard": True, "is_persistent": True}
 # Tap-to-try titles in the first step (Arabic and English work the same)
 EXAMPLES = ["محاسب", "مهندس مدني", "ممرض", "Data Analyst"]
@@ -333,8 +336,17 @@ def _query_of(sub):
     return q
 
 
+def is_fresh(job, today=None):
+    """Posted today or yesterday (the day's harvest): older jobs found late stay in "وظائفي" only."""
+    d = normalize.parse_date(job.get("posted_date"))
+    if not d:
+        return True
+    return (today or date.today()) - date.fromisoformat(d) <= timedelta(days=FRESH_DAYS)
+
+
 def search(sub, jobs=None, all_if_no_titles=False):
-    """Matching jobs, newest first (title hits before text hits on the same day)."""
+    """Matching jobs, newest first (a job's own title before a role listed in an announcement).
+    Jobs only: training, tamheer, courses, scholarships and admissions are in "أخرى"."""
     query = _query_of(sub)
     if not query and not all_if_no_titles:
         return []
@@ -349,7 +361,7 @@ def search(sub, jobs=None, all_if_no_titles=False):
             continue
         if exp and not normalize.experience_fits(exp, _job_exp(j)):
             continue
-        m = titles.match(j, query) if query else 1
+        m = titles.match(j, query) if query else (1 if jobkind.describe(j)["category"] == "job" else 0)
         if m:
             out.append((j.get("posted_date") or "", m, j))
     out.sort(key=lambda x: (x[0], x[1]), reverse=True)
@@ -411,7 +423,7 @@ def _tracked(job, url, who):
     return f"https://{config.PUBLIC_HOSTS[0]}/j/{job['id']}.{who}"
 
 
-def card(job, who=""):
+def card(job, who="", query=None):
     """Title, company / city / age, then the direct link: the original apply page found behind the
     re-posting site (its ads and "next" pages skipped), else the ad itself in its own source.
     who: the reader's hashed id, so a click is counted (the link text still names the real site)."""
@@ -420,6 +432,10 @@ def card(job, who=""):
     apply = url != (job.get("url") or "") or job.get("source") == TELEGRAM_SOURCE
     meta = [x for x in (job.get("company"), job.get("city"), _ago(job.get("posted_date"))) if x]
     lines = [f"<b>{esc(job.get('title'))}</b>"]
+    role = titles.matched_role(job, query) if query else ""
+    if role:   # "X تعلن 8 وظائف": name the one that fits this person
+        n = len(jobkind.describe(job)["roles"])
+        lines.append(f"✅ الوظيفة المناسبة لك: <b>{esc(role)}</b>" + (f" (من {n} وظائف في الإعلان)" if n > 1 else ""))
     if meta:
         lines.append(esc(" · ".join(meta)))
     src = job.get("source") or ""
@@ -467,12 +483,16 @@ HELP = (
     "2️⃣ <b>الخبرة:</b> اختر سنوات خبرتك\n"
     "3️⃣ <b>المدن:</b> اختر مدينة أو أكثر (والوظائف عن بعد تصلك معها)\n"
     f"4️⃣ <b>التوقيت:</b> كل وظيفة جديدة تصلك فور نزولها، أو مرة يومياً الساعة {config.BOT_DIGEST_HOUR} صباحاً\n"
-    "بعدها نعرض لك كل الوظائف الحالية، الأحدث أولاً، ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة.\n\n"
+    "بعدها نعرض لك كل الوظائف الحالية، الأحدث أولاً، ونبحث أيضاً بالأسماء الأخرى لنفس الوظيفة.\n"
+    "نطابق المسمى نفسه أو اسمه الآخر في نفس المجال فقط، وإعلان «عدة وظائف» نذكر لك منه الوظيفة التي تناسبك.\n"
+    f"📥 في {BTN_JOBS} زر لتحميل كل وظائفك في ملف Excel.\n"
+    f"🆕 الرسالة اليومية فيها حصاد اليوم فقط (الوظائف الجديدة)، والسابقة محفوظة في {BTN_JOBS}.\n\n"
     "🔗 <b>قدّم من المصدر:</b> الرابط تحت كل وظيفة يفتح إعلانها الأصلي مباشرة. "
     "مُنْفَرِد ينقل الخبر فقط، ولا يستقبل طلبات التوظيف.\n\n"
     "✍️ <b>اكتب لي بأسلوبك وأفهمك:</b> «أبغى وظيفة محاسب في جدة»، «ضيف الدمام»، «احذف مهندس مدني»، "
     "«خبرتي سنتين»، «أرسلها لي أول بأول».\n"
     f"{BTN_ALERTS}: إضافة أو حذف المسميات والمدن، والخبرة والتوقيت، في أي وقت.\n"
+    f"{BTN_OTHER}: التدريب التعاوني، تمهير، برامج التدريب، الابتعاث، الدورات، والقبول الجامعي، كل قسم وحده.\n"
     "📄 قراءة السيرة الذاتية: قريباً.\n"
     "/stop إيقاف التنبيهات، /delete حذف كل بياناتك.\n\n"
     "English works too: type a job title such as <b>accountant</b> or <b>nurse in Jeddah</b>.")
@@ -500,15 +520,17 @@ def _prune_sessions(ss):
         del ss[k]
 
 
-def _new_session(prev, ids, footer):
-    return dict(prev or {}, ids=ids[:MAX_RESULTS], pos=0, ts=time.time(), footer=footer, sid=secrets.token_hex(3))
+def _new_session(prev, ids, footer, mine=True):
+    """mine: results of the person's own titles (cards name the role that matched an announcement)."""
+    return dict(prev or {}, ids=ids[:MAX_RESULTS], pos=0, ts=time.time(), footer=footer, sid=secrets.token_hex(3),
+                mine=mine)
 
 
-def _session_set(chat_id, ids, footer=""):
+def _session_set(chat_id, ids, footer="", mine=True):
     """Store a result list for "more"; returns its short id (old "more" buttons stop working)."""
     with storage.edit("bot_sessions") as ss:
         _prune_sessions(ss)
-        ss[_key(chat_id)] = sess = _new_session(ss.get(_key(chat_id)), ids, footer)
+        ss[_key(chat_id)] = sess = _new_session(ss.get(_key(chat_id)), ids, footer, mine)
     return sess["sid"]
 
 
@@ -524,29 +546,36 @@ def _take_page(sess, by_id):
     return page, sum(1 for x in ids[i:] if x in by_id)
 
 
-def _render_page(header, page, left, footer, sid, who=""):
-    parts = ([header] if header else []) + [card(j, who) for j in page]
+BTN_XLS = {"text": "📥 كل وظائفي في ملف Excel", "callback_data": "xls"}
+
+
+def _render_page(header, page, left, footer, sid, who="", query=None, xls=False):
+    """xls: add the "all my jobs in Excel" button (the first page of the person's own results)."""
+    parts = ([header] if header else []) + [card(j, who, query) for j in page]
     if left <= 0 and footer:
         parts.append(footer)
-    markup = {"inline_keyboard": [[{"text": f"عرض المزيد ({left})", "callback_data": "more:" + sid}]]} \
-        if left > 0 else MAIN_KB
-    return _join_cards(parts), markup
+    rows = [[{"text": f"عرض المزيد ({left})", "callback_data": "more:" + sid}]] if left > 0 else []
+    if xls:
+        rows.append([BTN_XLS])
+    return _join_cards(parts), ({"inline_keyboard": rows} if rows else MAIN_KB)
 
 
-def send_page(chat_id, header="", sid=None, by_id=None, max_wait=3):
+def send_page(chat_id, header="", sid=None, by_id=None, max_wait=3, xls=False):
     """Next PAGE jobs of the chat's current results (jobs that expired meanwhile are skipped)."""
     by_id = by_id if by_id is not None else {j["id"]: j for j in _jobs()}
-    page, left, footer, cur_sid = [], 0, "", ""
+    page, left, footer, cur_sid, mine = [], 0, "", "", False
     with storage.edit("bot_sessions") as ss:
         s = ss.get(_key(chat_id))
         if s and (sid is None or s.get("sid") == sid):   # else: a "more" button from an older search
             page, left = _take_page(s, by_id)
-            footer, cur_sid = s.get("footer", ""), s.get("sid", "")
+            footer, cur_sid, mine = s.get("footer", ""), s.get("sid", ""), s.get("mine", True)
     if not page:
         tg.send(chat_id, f"انتهت نتائج هذا البحث. اضغط {BTN_JOBS} للبحث من جديد.", reply_markup=MAIN_KB,
                 max_wait=max_wait)
         return
-    text, markup = _render_page(header, page, left, footer, cur_sid, analytics.who(chat_id))
+    sub = get_sub(chat_id) if mine else None
+    text, markup = _render_page(header, page, left, footer, cur_sid, analytics.who(chat_id),
+                                _query_of(sub) if sub else None, xls=xls)
     tg.send(chat_id, text, reply_markup=markup, max_wait=max_wait)
 
 
@@ -703,9 +732,70 @@ def show_jobs(chat_id, suggest=False):
         f"الجديد يصلك {when}." if sub.get("mode") in ("daily", "instant")
         else f"التنبيهات متوقفة. فعّلها من {BTN_ALERTS}."))
     sid = _session_set(chat_id, [j["id"] for j in found], footer)
-    send_page(chat_id, header, sid=sid, by_id={j["id"]: j for j in found})
+    send_page(chat_id, header, sid=sid, by_id={j["id"]: j for j in found}, xls=True)
     if suggest:
         _send_suggestions(chat_id, suggestions(sub, found, jobs))
+
+
+def other_menu(chat_id):
+    """Everything that is not a job, each in its own section: coop training, tamheer, programmes,
+    scholarships, courses, university admission (newest first, every city)."""
+    counts = Counter(jobkind.describe(j)["category"] for j in _jobs())
+    rows = [[{"text": f"{btn} ({counts.get(k, 0)})", "callback_data": "oth:" + k}]
+            for k, (btn, _) in jobkind.CATEGORIES.items()]
+    tg.send(chat_id, "🗂️ <b>أقسام أخرى غير الوظائف</b>\n"
+            "التدريب والبرامج والدورات والابتعاث والقبول الجامعي، كل قسم وحده.\n"
+            f"الوظائف فقط تجدها في {BTN_JOBS}.", reply_markup={"inline_keyboard": rows})
+
+
+def show_other(chat_id, cat):
+    if cat not in jobkind.CATEGORIES:
+        return
+    items = [j for j in _jobs() if jobkind.describe(j)["category"] == cat]
+    items.sort(key=lambda j: (j.get("posted_date") or "", _stored_at(j) or datetime.min), reverse=True)
+    title = jobkind.CATEGORIES[cat][1]
+    _ev("other", chat_id, section=cat, results=len(items))
+    if not items:
+        tg.send(chat_id, f"لا يوجد الآن شيء في قسم «{esc(title)}». نجمعه من كل المصادر على مدار الساعة.",
+                reply_markup=MAIN_KB)
+        return
+    sid = _session_set(chat_id, [j["id"] for j in items], f"هذا كل ما في قسم «{esc(title)}» ✅", mine=False)
+    head = f"🗂️ <b>{esc(title)}</b>: {_ar_count(len(items))}، الأحدث أولاً."
+    send_page(chat_id, head, sid=sid, by_id={j["id"]: j for j in items})
+
+
+def _ar_count(n):
+    return "واحد" if n == 1 else "اثنان" if n == 2 else f"{n}"
+
+
+def send_xls(chat_id):
+    """Every job matching the person's titles (all of them, not only new ones) in one simple Excel file."""
+    sub = get_sub(chat_id)
+    if not sub or not sub.get("titles"):
+        tg.send(chat_id, START_HINT, reply_markup=MAIN_KB)
+        return
+    found = search(sub)[:XLS_MAX]
+    if not found:
+        tg.send(chat_id, "لا توجد وظائف لمسمياتك الآن.", reply_markup=MAIN_KB)
+        return
+    q, who = _query_of(sub), analytics.who(chat_id)
+    rows = []
+    for j in found:
+        url = normalize.original_link(j) or j.get("apply_url") or j.get("url") or ""
+        rows.append([j.get("title") or "", titles.matched_role(j, q), j.get("company") or "", j.get("city") or "",
+                     j.get("posted_date") or "", _tracked(j, url, who) if url.startswith("http") else url,
+                     j.get("source") or ""])
+    data = xlsx.workbook([("وظائفي", ["المسمى", "الوظيفة المناسبة لك (في إعلان عدة وظائف)", "الجهة", "المدينة",
+                                       "تاريخ النشر", "رابط التقديم", "المصدر"], rows)])
+    names = "، ".join(t["title"] for t in sub["titles"])
+    _ev("xls", chat_id, results=len(rows))
+    try:
+        tg.send_document(chat_id, f"munfarid-jobs-{date.today().isoformat()}.xlsx", data,
+                         caption=f"📥 كل وظائفك ({_ar_jobs(len(rows))}) لـ: {esc(names)}",
+                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except tg.TelegramError as e:
+        log.warning("excel to %s failed: %r", chat_id, e)
+        tg.send(chat_id, "تعذّر إرسال الملف الآن، حاول بعد قليل.", reply_markup=MAIN_KB)
 
 
 def _add_cities(s, cities):
@@ -1343,6 +1433,10 @@ def handle_private(msg):
         if cv and cv.get("summary"):
             extra = "\n\nآخر سيرة قرأناها: " + esc(cv["summary"])
         return tg.send(chat_id, CV_PROMPT + extra, reply_markup=MAIN_KB)
+    if cmd == "/other" or text == BTN_OTHER:
+        return other_menu(chat_id)
+    if cmd == "/excel":
+        return send_xls(chat_id)
     if cmd == "/sources" or text == BTN_SOURCES:
         t, kb = sources_menu(chat_id)
         return tg.send(chat_id, t, reply_markup=kb)
@@ -1406,6 +1500,10 @@ def handle_callback(cb):
         return
     if data == "more" or data.startswith("more:"):
         return send_page(chat_id, sid=data[5:] if data.startswith("more:") else None)
+    if data.startswith("oth:"):
+        return show_other(chat_id, data[4:])
+    if data == "xls":
+        return send_xls(chat_id)
     if data == "wipe:no":
         return _show(chat_id, mid, ("لم يُحذف شيء.", None))
     if data.startswith(("dl:yes:", "dl:no:")):
@@ -1726,11 +1824,12 @@ def on_new_jobs(added):
         q = s.get("instant_count") or {}
         used = q.get("n", 0) if q.get("date") == today else 0
         already = set(s.get("sent") or [])
-        hits = [j for j in search(s, fresh) if j["id"] not in already][:max(0, INSTANT_DAILY_CAP - used)]
+        hits = [j for j in search(s, fresh) if j["id"] not in already and is_fresh(j)][:max(0, INSTANT_DAILY_CAP - used)]
         if not hits:
             continue
         shown = hits[:PAGE]
-        parts = ["🔔 " + f"{_ar_new_jobs(len(hits))} لك"] + [card(j, analytics.who(s["chat_id"])) for j in shown]
+        q = _query_of(s)
+        parts = ["🔔 " + f"{_ar_new_jobs(len(hits))} لك"] + [card(j, analytics.who(s["chat_id"]), q) for j in shown]
         if len(hits) > len(shown):
             parts.append(f"والمزيد في {BTN_JOBS}.")
         try:
@@ -1862,7 +1961,7 @@ def digest_tick(now=None):
         since = _ts(s.get("since"))
         fresh = [j for j in jobs if since is None or (_stored_at(j) and _stored_at(j) > since - DIGEST_MARGIN)]
         already = set(s.get("sent") or [])
-        hits = [j for j in search(s, fresh) if j["id"] not in already]
+        hits = [j for j in search(s, fresh) if j["id"] not in already and is_fresh(j, now.date())]
         plans.append((s, hits))
     with storage.edit("subscribers") as all_subs:   # marked first, in one write: a crash must not resend
         mine = []
@@ -1882,12 +1981,12 @@ def digest_tick(now=None):
             if not hits:
                 continue
             names = "، ".join(t["title"] for t in s["titles"])
-            sess = _new_session(ss.get(_key(s["chat_id"])), [j["id"] for j in hits], "هذه كل الوظائف الجديدة اليوم ✅")
+            sess = _new_session(ss.get(_key(s["chat_id"])), [j["id"] for j in hits], "هذه كل الوظائف الجديدة اليوم ✅\nوظائفك السابقة كلها محفوظة في " + BTN_JOBS)
             page, left = _take_page(sess, by_id)
             ss[_key(s["chat_id"])] = sess
-            header = f"🆕 <b>{_ar_new_jobs(len(hits))} لك اليوم</b>\nلـ: {esc(names)}"
+            header = f"🆕 <b>حصاد اليوم: {_ar_new_jobs(len(hits))} لك</b>\nلـ: {esc(names)}"
             outbox.append((s, hits, _render_page(header, page, left, sess["footer"], sess["sid"],
-                                                 analytics.who(s["chat_id"]))))
+                                                 analytics.who(s["chat_id"]), _query_of(s))))
     sent, failed = 0, []
     for n, (s, hits, (text, markup)) in enumerate(outbox):
         try:

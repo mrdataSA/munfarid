@@ -14,7 +14,7 @@ import time
 import traceback
 from urllib.parse import urlsplit
 
-from backend import ai, analytics, bot, catalog, config, dedup, enrich, normalize, notifier, storage
+from backend import ai, analytics, bot, catalog, config, dedup, enrich, jobkind, normalize, notifier, storage
 
 from . import apis, ats, base, html_list, jadarat, linkedin, origin, programs_watch, rss, telegram_channels, waiting, x_api
 
@@ -26,6 +26,7 @@ ENRICH_BACKFILL = 120      # older unclassified jobs per full run (capped at hal
 COMPANY_BEFORE_ALERT = 30  # new jobs without an employer: the AI reads the ad for it before alerting
 COMPANY_BACKFILL = 200     # stored jobs without an employer, per full run
 DEDUP_BEFORE_ALERT = 1000  # candidate pairs per source checked before adding (beyond: the job waits a run)
+ROLES_PER_RUN = 60         # announcements whose roles the AI reads per full run
 DEDUP_BACKFILL = 1200      # stored jobs' candidate pairs per full run (capped by dedup.cleanup_share of the daily AI budget)
 SOURCES_FILE =os.path.join(os.path.dirname(__file__), "sources.json")
 COLLECT_LOCK = os.path.join(storage.config.STORE_DIR, ".collect.lock")
@@ -324,6 +325,20 @@ def _process_waiting(fast, totals, sent_per_user):
         _add_jobs("_waiting", ready, totals, sent_per_user)
 
 
+def reclassify():
+    """Stamp every stored job with its category and roles (backend/jobkind.py, rules only, no AI).
+    Returns how many changed."""
+    changed = 0
+    with storage.edit("jobs") as stored:
+        for j in stored:
+            before = (j.get("category"), j.get("announce"), tuple(j.get("roles") or ()), j.get("category_v"))
+            jobkind.stamp(j)
+            changed += before != (j.get("category"), j.get("announce"), tuple(j.get("roles") or ()), j.get("category_v"))
+    if changed:
+        log.info("reclassified %d stored jobs", changed)
+    return changed
+
+
 def _process_dedup_wait(totals, sent_per_user):
     """New jobs the AI could not check last run: checked again first (or added after 24 h)."""
     again, late = dedup.release()
@@ -425,6 +440,14 @@ def run_all(only=None, fast=False):
                 _helper_done(src)
 
         if not fast:
+            try:  # every stored job read again by the current rules: job / training / tamheer / ... + roles
+                totals["reclassified"] = reclassify()
+            except Exception:
+                log.warning("reclassify failed:\n%s", traceback.format_exc())
+            try:  # announcements whose text lists no roles the rules could read: the AI names them
+                totals["roles_read"] = enrich.fill_roles(ROLES_PER_RUN)
+            except Exception:
+                log.warning("announcement roles failed:\n%s", traceback.format_exc())
             try:  # cross-source duplicates already stored (AI), newest first, within budget (first: it shares the AI budget)
                 gone = dedup.backfill(DEDUP_BACKFILL)
                 totals["duplicates"] = totals.get("duplicates", 0) + len(gone)

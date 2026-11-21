@@ -23,7 +23,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from backend import analytics, bot, config, normalize, owner, pgstore, storage  # noqa: E402
+from backend import analytics, bot, config, jobkind, normalize, owner, pgstore, storage  # noqa: E402
 
 log = logging.getLogger("rizq.cloud")
 SNAPSHOT = os.path.join(ROOT, "snapshot")   # bundled with the bot/site function (read-only)
@@ -90,6 +90,11 @@ def slim_job(j):
     if "exp_years" not in j:
         out["exp_years"] = normalize.detect_experience(j.get("title") or "", text)
     out["raw_text"] = text[:SNAPSHOT_TEXT_CHARS]
+    if j.get("category_v") != jobkind.VERSION:   # read from the whole text (the roles list may be further down)
+        d = jobkind.read(j)
+        out.update(category=d["category"], announce=d["announce"], category_v=jobkind.VERSION)
+        if d["announce"]:
+            out["roles"] = d["roles"]
     return out
 
 

@@ -2,7 +2,7 @@
 
 import json
 
-from . import config, normalize, posts, storage
+from . import config, jobkind, normalize, posts, storage
 
 # Heavy/internal fields not sent to the browser
 PRIVATE_FIELDS = ("raw_text", "merge_key", "hash", "collected_at", "ai_checked", "contact_email", "ip_hash", "status")
@@ -167,6 +167,7 @@ def merge_collected(new_jobs):
                     if job["source"] not in also and len(also) < 8:
                         also.append(job["source"])
                 continue
+            jobkind.stamp(job)   # job / training / tamheer / ... and the roles of an announcement
             jobs.append(job)
             by_id[job["id"]] = job
             if job.get("merge_key"):

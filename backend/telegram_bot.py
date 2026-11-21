@@ -4,12 +4,15 @@ The conversation itself lives in bot.py. handle_message() below is the older
 website-link flow (/start <token> from the site's "اربط تيليجرام" button).
 """
 
+import hashlib
 import html
 import json
 import logging
+import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -49,6 +52,36 @@ def call(method, http_timeout=30, **params):
         err.retry_after = err.parameters.get("retry_after")
         raise err
     return data.get("result")
+
+
+def send_document(chat_id, filename, data, caption="", mime="application/octet-stream", http_timeout=60):
+    """Upload one file to a chat (multipart/form-data)."""
+    boundary = "----munfarid" + hashlib.sha1(data[:4096] + filename.encode("utf-8")).hexdigest()[:24]
+    parts = []
+    for k, v in (("chat_id", str(chat_id)), ("caption", caption), ("parse_mode", "HTML")):
+        if v:
+            parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8"))
+    safe = re.sub(r'["\r\n]', "", filename)
+    parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="{safe}"; '
+                  f"filename*=UTF-8''{urllib.parse.quote(safe)}\r\nContent-Type: {mime}\r\n\r\n").encode("utf-8")
+                 + data + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+    req = urllib.request.Request(f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendDocument",
+                                 data=b"".join(parts), method="POST",
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=http_timeout) as r:
+            out = json.load(r)
+    except urllib.error.HTTPError as e:
+        try:
+            out = json.load(e)
+        except (ValueError, OSError):
+            raise TelegramError(e.code, "HTTP error")
+    except (urllib.error.URLError, OSError) as e:
+        raise TelegramError(0, str(e))
+    if not out.get("ok"):
+        raise TelegramError(out.get("error_code", 0), out.get("description", ""))
+    return out.get("result")
 
 
 def send(chat_id, text, reply_markup=None, max_wait=3):
