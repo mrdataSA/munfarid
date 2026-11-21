@@ -45,6 +45,8 @@ COLLECTIONS = {
     "bot_sessions": ("bot_sessions.json", dict),   # Telegram bot: last search results per chat (for "more")
     "inbox": ("inbox.json", dict),                 # source key -> batches fetched by the Saudi helper (tools/saudi_helper.py)
     "recent_jobs": ("recent_jobs.json", dict),     # cloud: jobs stored in the last days, until Vercel's snapshot has them
+    "ai_todo": ("ai_todo.json", dict),             # cloud: AI work left when Groq's daily budget ran out (for Claude on Raed's PC)
+    "ai_ext": ("ai_ext.json", dict),               # cloud: answers to ai_todo sent back through /api/helper/ai_done
     "rate_limits": ("rate_limits.json", dict),     # cloud: login / post / report attempts per key (shared by all instances)
     "events": ("events.json", list),               # local mode only: bot events for the dashboard (cloud: rizq.events)
     "origin_wait": ("origin_wait.json", dict),     # collector: jobs waiting for their original link (collectors/waiting.py)
@@ -56,7 +58,7 @@ COLLECTIONS = {
 # Shared between the bot/site and the collectors: Postgres in cloud mode
 SHARED = {"reports", "users", "direct_posts", "sessions", "settings", "sent", "sources_status", "ai_cache",
           "bot_state", "link_tokens", "alerts_daily", "subscribers", "bot_sessions", "inbox", "recent_jobs",
-          "rate_limits"}
+          "rate_limits", "ai_todo", "ai_ext"}
 
 
 def _in_db(name):

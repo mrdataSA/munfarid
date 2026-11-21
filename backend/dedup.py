@@ -202,10 +202,33 @@ PAIRS_MAX = 200000   # ~60 bytes each: the answers live in their own file, not i
 
 
 def _known():
-    """Every pair answer so far: the own store, plus older answers still in ai_cache."""
+    """Every pair answer so far: the own store, older answers still in ai_cache, and answers sent back
+    for the published leftover work (ai_ext: Claude on Raed's PC, when Groq's daily budget ran out)."""
     out = {k: v for k, v in storage.read("ai_cache").items() if k.startswith("dup:") and isinstance(v, bool)}
+    out.update({k: v for k, v in storage.read("ai_ext").items() if k.startswith("dup:") and isinstance(v, bool)})
     out.update(storage.read("dedup_pairs"))
     return out
+
+
+TODO_PAIRS = 4000   # published per full run (~700 bytes each)
+
+
+def absorb_ext():
+    """Answers sent back through the site (ai_ext) move into the own store, then leave ai_ext."""
+    ext = {k: v for k, v in storage.read("ai_ext").items() if k.startswith("dup:") and isinstance(v, bool)}
+    if not ext:
+        return 0
+    _save_pairs(ext)
+    with storage.edit("ai_ext") as e:
+        for k in ext:
+            e.pop(k, None)
+    return len(ext)
+
+
+def todo_pairs(limit=TODO_PAIRS):
+    """The stored-job pairs still not judged, as the AI would see them (for ai_todo)."""
+    todo, _ = backlog_pairs()
+    return [{"key": _pair_key(n, s), "a": _ad(n), "b": _ad(s)} for n, s in todo[:limit]]
 
 
 def _save_pairs(entries):

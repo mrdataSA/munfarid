@@ -739,6 +739,58 @@ def api_helper_archive_ack(h):
     return ok({"deleted": analytics.outbox_ack(ids)})
 
 
+AI_TODO_TAKE_MAX = 1000
+AI_EXT_MAX = 50000
+_DUP_KEY = re.compile(r"dup:[0-9a-f]{40}")
+
+
+@route("GET", "/api/helper/ai_todo")
+def api_helper_ai_todo(h):
+    """AI work the cloud could not do today (Groq's daily budget ran out): duplicate pairs to judge and
+    announcements whose roles are unknown, with the prompts the cloud uses. kind=pairs|roles, offset, limit."""
+    _helper(h)
+    q = h.query()
+    kind = (q.get("kind") or ["pairs"])[0]
+    if kind not in ("pairs", "roles"):
+        raise ApiError(400, "bad kind")
+    try:
+        off = max(0, int((q.get("offset") or [0])[0]))
+        n = max(1, min(AI_TODO_TAKE_MAX, int((q.get("limit") or [AI_TODO_TAKE_MAX])[0])))
+    except ValueError:
+        raise ApiError(400, "bad offset / limit")
+    todo = storage.read("ai_todo")
+    items = todo.get(kind) or []
+    done = storage.read("ai_ext")
+    left = [x for x in items if ("roles:" + x.get("id", "") if kind == "roles" else x.get("key")) not in done]
+    return ok({"at": todo.get("at"), "total": len(items), "left": len(left), "items": left[off:off + n],
+               "prompt": todo.get("dup_prompt" if kind == "pairs" else "roles_prompt") or ""})
+
+
+@route("POST", "/api/helper/ai_done")
+def api_helper_ai_done(h):
+    """Answers to ai_todo: {"pairs": {key: true|false}, "roles": {job id: [titles]}}; only keys that are
+    in the published work are taken. The collectors read them on their next full run."""
+    _helper(h)
+    b = h.body()
+    todo = storage.read("ai_todo")
+    want_pairs = {x.get("key") for x in todo.get("pairs") or []}
+    want_roles = {x.get("id") for x in todo.get("roles") or []}
+    new = {}
+    for k, v in (b.get("pairs") or {}).items() if isinstance(b.get("pairs"), dict) else []:
+        if isinstance(k, str) and _DUP_KEY.fullmatch(k) and k in want_pairs and isinstance(v, bool):
+            new[k] = v
+    for k, v in (b.get("roles") or {}).items() if isinstance(b.get("roles"), dict) else []:
+        if k in want_roles and isinstance(v, list):
+            new["roles:" + k] = [str(x)[:60] for x in v[:20] if isinstance(x, str) and x.strip()]
+    if new:
+        with storage.edit("ai_ext") as e:
+            e.update(new)
+            if len(e) > AI_EXT_MAX:
+                for old in list(e)[: len(e) - AI_EXT_MAX]:
+                    del e[old]
+    return ok({"saved": len(new)})
+
+
 # ---------------------------------------------------------------- owner dashboard
 
 NONE_VALUE = "__none__"   # the dashboard's value for "not stated" (an empty city or source)

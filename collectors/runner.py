@@ -326,17 +326,38 @@ def _process_waiting(fast, totals, sent_per_user):
 
 
 def reclassify():
-    """Stamp every stored job with its category and roles (backend/jobkind.py, rules only, no AI).
-    Returns how many changed."""
-    changed = 0
+    """Stamp every stored job with its category and roles (backend/jobkind.py, rules only, no AI);
+    courses and university admission are removed (not kept). Returns (changed, removed ids)."""
+    changed, gone = 0, []
     with storage.edit("jobs") as stored:
         for j in stored:
             before = (j.get("category"), j.get("announce"), tuple(j.get("roles") or ()), j.get("category_v"))
             jobkind.stamp(j)
             changed += before != (j.get("category"), j.get("announce"), tuple(j.get("roles") or ()), j.get("category_v"))
-    if changed:
-        log.info("reclassified %d stored jobs", changed)
-    return changed
+            if j["category"] in jobkind.DROP:
+                gone.append(j["id"])
+        if gone:
+            drop = set(gone)
+            stored[:] = [j for j in stored if j["id"] not in drop]
+    if gone and config.DATABASE_URL:
+        with storage.edit("recent_jobs") as recent:
+            for i in gone:
+                recent.pop(i, None)
+    if changed or gone:
+        log.info("reclassified %d stored jobs, removed %d courses / admissions", changed, len(gone))
+    return changed, gone
+
+
+def publish_ai_todo():
+    """AI work left when Groq's daily budget ran out (duplicate pairs, announcement roles), published
+    for the helper side (Claude on Raed's PC, /api/helper/ai_todo); answers come back in ai_ext."""
+    absorbed = dedup.absorb_ext()
+    pairs, roles = dedup.todo_pairs(), enrich.todo_roles()
+    storage.write("ai_todo", {"at": storage.now_iso(), "pairs": pairs, "roles": roles,
+                              "dup_prompt": dedup.SYSTEM, "roles_prompt": enrich.ROLES_SYSTEM})
+    log.info("AI work published for the helper: %d pairs, %d announcements (%d answers absorbed)",
+             len(pairs), len(roles), absorbed)
+    return {"pairs": len(pairs), "roles": len(roles), "absorbed": absorbed}
 
 
 def _process_dedup_wait(totals, sent_per_user):
@@ -441,7 +462,9 @@ def run_all(only=None, fast=False):
 
         if not fast:
             try:  # every stored job read again by the current rules: job / training / tamheer / ... + roles
-                totals["reclassified"] = reclassify()
+                totals["reclassified"], dropped = reclassify()
+                if dropped and config.DATABASE_URL:
+                    analytics.drop_rows(dropped)
             except Exception:
                 log.warning("reclassify failed:\n%s", traceback.format_exc())
             try:  # announcements whose text lists no roles the rules could read: the AI names them
@@ -455,6 +478,10 @@ def run_all(only=None, fast=False):
                     analytics.drop_rows(gone)
             except Exception:
                 log.warning("duplicate backfill failed:\n%s", traceback.format_exc())
+            try:  # what Groq could not do today: published for the helper side
+                totals["ai_todo"] = publish_ai_todo()
+            except Exception:
+                log.warning("AI todo publish failed:\n%s", traceback.format_exc())
             try:  # stored jobs without an employer: the AI reads the whole ad for it
                 totals["companies"] = enrich.backfill_companies(COMPANY_BACKFILL)
             except Exception:

@@ -277,6 +277,12 @@ def fill_roles(limit=60, max_share=ROLES_SHARE):
         if len(todo) >= limit:
             break
     found = {}
+    ext = storage.read("ai_ext")   # answers sent back for the published leftover work (Claude on Raed's PC)
+    for j in todo:
+        got = ext.get("roles:" + j["id"])
+        if isinstance(got, list):
+            found[j["id"]] = _checked_roles(j, got)
+    todo = [j for j in todo if j["id"] not in found]
     for start in range(0, len(todo), ROLES_BATCH):
         if _budget_used_share() >= max_share:
             break
@@ -296,14 +302,7 @@ def fill_roles(limit=60, max_share=ROLES_SHARE):
             r = got.get(str(n))
             if r is None or not isinstance(r.get("roles"), list):
                 continue
-            hay = normalize.norm(j.get("title", "") + " " + (j.get("raw_text") or j.get("description") or ""))
-            roles = []
-            for x in r["roles"][:20]:
-                x = normalize.one_line(x, 60) if isinstance(x, str) else ""
-                # every word of the role must be in the ad (no invented titles)
-                if x and jobkind.role_words(x) and all(w in hay for w in normalize.norm(x).split()) and x not in roles:
-                    roles.append(x)
-            found[j["id"]] = roles
+            found[j["id"]] = _checked_roles(j, r["roles"])
     if not found:
         return 0
     with storage.edit("jobs") as stored:
@@ -311,5 +310,39 @@ def fill_roles(limit=60, max_share=ROLES_SHARE):
             if j["id"] in found:
                 j["roles"], j["roles_ai"] = found[j["id"]], True
                 jobkind.stamp(j)
+    with storage.edit("ai_ext") as e:
+        for i in found:
+            e.pop("roles:" + i, None)
     log.info("announcement roles: %d read (%d with roles)", len(found), sum(1 for v in found.values() if v))
     return len(found)
+
+
+def _checked_roles(job, raw):
+    """Role names from an AI answer, kept only when every word is in the ad (no invented titles)."""
+    from . import jobkind
+    hay = normalize.norm(job.get("title", "") + " " + (job.get("raw_text") or job.get("description") or ""))
+    roles = []
+    for x in raw[:20]:
+        x = normalize.one_line(x, 60) if isinstance(x, str) else ""
+        if x and jobkind.role_words(x) and all(w in hay for w in normalize.norm(x).split()) and x not in roles:
+            roles.append(x)
+    return roles
+
+
+TODO_ROLES = 600
+
+
+def todo_roles(limit=TODO_ROLES):
+    """Announcements whose roles are still unknown, as the AI would see them (for ai_todo)."""
+    from . import jobkind
+    out = []
+    for j in sorted(storage.read("jobs"), key=lambda j: j.get("collected_at") or "", reverse=True):
+        if j.get("roles_ai"):
+            continue
+        d = jobkind.describe(j)
+        if d["category"] == "job" and d["announce"] and not d["roles"]:
+            out.append({"id": j["id"], "title": j.get("title", ""),
+                        "text": normalize.clean_text(j.get("raw_text") or j.get("description") or "", ROLES_CHARS)})
+            if len(out) >= limit:
+                break
+    return out

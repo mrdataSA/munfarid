@@ -727,12 +727,14 @@ try:
     c905 = bot.card(next(j for j in bot._jobs() if j["id"] == "j905"), "", bot._query_of(bot.get_sub(R)))
     check("card: names the role that fits in an announcement", "الوظيفة المناسبة لك" in c905 and "محلل بيانات" in c905, c905)
     cats = {j["id"]: jobkind.describe(j)["category"] for j in bot._jobs() if j["id"] in ("j904", "j906", "j907")}
-    check("other sections: programme / course / coop", cats == {"j904": "training", "j906": "course", "j907": "coop"}, cats)
+    check("other sections: programme / coop; courses are not kept at all", cats == {"j904": "training", "j907": "coop"}
+          and jobkind.category("برنامج مستقبلي - دورات تدريبية") == "course" and "course" in jobkind.DROP, cats)
     sent.clear()
     bot.handle_update(msg(R, bot.BTN_OTHER))
     kb = last_markup(R)
     datas = [b.get("callback_data") for row in kb.get("inline_keyboard", []) for b in row]
-    check("other: one button per section", "oth:coop" in datas and "oth:tamheer" in datas and "oth:course" in datas, datas)
+    check("other: one button per section", "oth:coop" in datas and "oth:tamheer" in datas and "oth:course" not in datas
+          and "oth:admission" not in datas, datas)
     bot.handle_update(cb(R, "oth:coop"))
     check("other: the section lists its items", "التدريب التعاوني" in texts_to(R)[-1]
           and "برنامج التدريب التعاوني" in texts_to(R)[-1], texts_to(R)[-1][:200])

@@ -168,6 +168,8 @@ def merge_collected(new_jobs):
                         also.append(job["source"])
                 continue
             jobkind.stamp(job)   # job / training / tamheer / ... and the roles of an announcement
+            if job["category"] in jobkind.DROP:   # courses, university admission: not kept
+                continue
             jobs.append(job)
             by_id[job["id"]] = job
             if job.get("merge_key"):

@@ -310,7 +310,8 @@ def _jobs():
     whose only link is a relay page (ads, "next" pages) waits until collectors.origin resolves it."""
     jobs, _ = catalog.all_jobs(include_demo=False)
     return [j for j in jobs if not j.get("scam_risk") and not j.get("is_demo")
-            and (not config.BOT_ORIGIN_ONLY or normalize.original_link(j))]
+            and (not config.BOT_ORIGIN_ONLY or normalize.original_link(j))
+            and jobkind.describe(j)["category"] not in jobkind.DROP]
 
 
 _exp_cache = {}
@@ -492,7 +493,7 @@ HELP = (
     "✍️ <b>اكتب لي بأسلوبك وأفهمك:</b> «أبغى وظيفة محاسب في جدة»، «ضيف الدمام»، «احذف مهندس مدني»، "
     "«خبرتي سنتين»، «أرسلها لي أول بأول».\n"
     f"{BTN_ALERTS}: إضافة أو حذف المسميات والمدن، والخبرة والتوقيت، في أي وقت.\n"
-    f"{BTN_OTHER}: التدريب التعاوني، تمهير، برامج التدريب، الابتعاث، الدورات، والقبول الجامعي، كل قسم وحده.\n"
+    f"{BTN_OTHER}: التدريب التعاوني، تمهير، برامج التدريب والتأهيل، والابتعاث، كل قسم وحده.\n"
     "📄 قراءة السيرة الذاتية: قريباً.\n"
     "/stop إيقاف التنبيهات، /delete حذف كل بياناتك.\n\n"
     "English works too: type a job title such as <b>accountant</b> or <b>nurse in Jeddah</b>.")
@@ -744,7 +745,7 @@ def other_menu(chat_id):
     rows = [[{"text": f"{btn} ({counts.get(k, 0)})", "callback_data": "oth:" + k}]
             for k, (btn, _) in jobkind.CATEGORIES.items()]
     tg.send(chat_id, "🗂️ <b>أقسام أخرى غير الوظائف</b>\n"
-            "التدريب والبرامج والدورات والابتعاث والقبول الجامعي، كل قسم وحده.\n"
+            "التدريب التعاوني وتمهير وبرامج التدريب والابتعاث، كل قسم وحده.\n"
             f"الوظائف فقط تجدها في {BTN_JOBS}.", reply_markup={"inline_keyboard": rows})
 
 

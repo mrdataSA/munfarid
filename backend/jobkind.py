@@ -24,10 +24,9 @@ CATEGORIES = {   # key -> (bot button, section title)
     "tamheer": ("🧩 تمهير", "برنامج تمهير"),
     "training": ("📘 برامج التدريب والتأهيل", "برامج التدريب والتأهيل (منها المنتهي بالتوظيف)"),
     "scholarship": ("✈️ الابتعاث والمنح", "الابتعاث والمنح الدراسية"),
-    "course": ("📚 الدورات", "الدورات وورش العمل"),
-    "admission": ("🏫 القبول الجامعي", "القبول والتسجيل في الجامعات والكليات"),
 }
 OTHER = tuple(CATEGORIES)
+DROP = ("course", "admission")   # not kept at all (Raed, 2026-11-21): read only so they never pass as jobs
 
 # On normalize.norm() text (ا for أإآ, ه for ة, ي for ى)
 _RULES = [

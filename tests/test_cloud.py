@@ -243,6 +243,12 @@ try:
     check("dedup: cleanup share 60% by day, 90% late (unused budget is lost at the reset)",
           dedup.cleanup_share(_dt(2026, 11, 21, 1, tzinfo=_tz.utc)) == 0.6
           and dedup.cleanup_share(_dt(2026, 11, 21, 21, tzinfo=_tz.utc)) == 0.9)
+    storage.write("ai_ext", {"dup:" + "e" * 40: True, "roles:x": ["محاسب"]})
+    seen_before = dedup._known().get("dup:" + "e" * 40) is True
+    moved = dedup.absorb_ext()
+    check("dedup: answers sent back (helper side) count and move into the own store",
+          seen_before and moved == 1 and storage.read("dedup_pairs").get("dup:" + "e" * 40) is True
+          and storage.read("ai_ext") == {"roles:x": ["محاسب"]})
     long = "أ" * 1000
     check("dedup: short text for one role, longer for an announcement",
           len(dedup._ad({"title": "محاسب", "raw_text": long})["text"]) <= 101

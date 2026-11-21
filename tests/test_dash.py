@@ -278,6 +278,19 @@ try:
     check("archive API: with the key (local mode: empty outbox)",
           hreq("GET", "/api/helper/archive?limit=50")["items"] == []
           and hreq("POST", "/api/helper/archive/ack", {"ids": ["job:1", 5]})["deleted"] == 0)
+    # leftover AI work (Groq's daily budget ran out): published, answered by the helper side, only known keys taken
+    k1, k2 = "dup:" + "a" * 40, "dup:" + "b" * 40
+    storage.write("ai_todo", {"at": "x", "pairs": [{"key": k1, "a": {}, "b": {}}, {"key": k2, "a": {}, "b": {}}],
+                              "roles": [{"id": "c1", "title": "t", "text": "x"}], "dup_prompt": "P", "roles_prompt": "R"})
+    t1 = hreq("GET", "/api/helper/ai_todo?kind=pairs&limit=1")
+    check("ai todo API: pairs page + prompt", t1["total"] == 2 and len(t1["items"]) == 1 and t1["prompt"] == "P", t1)
+    sv = hreq("POST", "/api/helper/ai_done", {"pairs": {k1: True, "dup:" + "c" * 40: True, k2: "yes"},
+                                              "roles": {"c1": ["محاسب", 5], "zzz": ["x"]}})
+    ext = storage.read("ai_ext")
+    check("ai done API: only published keys with valid answers", sv["saved"] == 2 and ext.get(k1) is True
+          and k2 not in ext and ext.get("roles:c1") == ["محاسب"] and "roles:zzz" not in ext, (sv, ext))
+    check("ai todo API: answered items are not handed out again",
+          hreq("GET", "/api/helper/ai_todo?kind=pairs")["left"] == 1)
     hreq("POST", "/api/helper/report", {"report": {"at": "2026-11-20T21:00:00+03:00", "mode": "linkedin", "sources": {},
                                                    "archive": {"jobs": 1200, "rows": 3, "free_gb": 3700,
                                                                "path": "E:\\Munfarid\\archive", "evil": "<x>"}}})
