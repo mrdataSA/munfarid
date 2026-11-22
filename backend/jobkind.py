@@ -17,7 +17,7 @@ import threading
 
 from . import normalize
 
-VERSION = 3      # stored "category_v": a job read by older rules is read again
+VERSION = 4     # stored "category_v": a job read by older rules is read again
 
 CATEGORIES = {   # key -> (bot button, section title)
     "coop": ("🎓 التدريب التعاوني", "التدريب التعاوني لطلاب الجامعات"),
@@ -40,7 +40,8 @@ _RULES = [
                              r"(?:قبول|التسجيل في|التقديم علي) (?:\S+ )?(?:ال)?(?:ماجستير|دكتوراه|دبلوم|بكالوريوس|"
                              r"الدراسات العليا)")),
     ("course", re.compile(r"(?<!\w)(?:ال)?(?:دوره|دورات|كورس|كورسات)(?!\w)|\bcourses?\b|\bbootcamps?\b|"
-                          r"معسكر|ورشه عمل|ورش عمل|\bworkshops?\b|\bwebinars?\b|محاضره|لقاء افتراضي")),
+                          r"معسكر|ورشه عمل|ورش عمل|\bworkshops?\b|\bwebinars?\b|محاضره|لقاء افتراضي|"
+                          r"(?:برنامج|برامج|دبلوم) (?:ال)?لغه|english (?:language )?(?:course|program)")),
     ("training", re.compile(r"^برنامج|^برامج|برنامج (?:ال)?(?:تدريب|تاهيل|اعداد|تطوير)|برامج (?:ال)?(?:تدريب|تاهيل)|"
                             r"تدريب (?:منتهي|المنتهي) بالتوظيف|(?:ال)?منتهي بالتوظيف|تدريب علي راس العمل|"
                             r"graduate (?:development )?programs?|trainee programs?|management trainee|"
