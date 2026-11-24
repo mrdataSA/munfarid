@@ -333,7 +333,9 @@ def _words_of(job):
     d = jobkind.describe(job)
     rw = tokens(" ".join(jobkind.role_words(job.get("title") or "", job.get("company") or "")))
     if not useful(rw):   # "مدير" + employer "مطعم": the employer's word was the role's word, keep the whole title
-        rw = tokens(" ".join(jobkind.role_words(job.get("title") or ""))) or tokens(job.get("title") or "")
+        rw = tokens(" ".join(jobkind.role_words(job.get("title") or "")))
+        if not useful(rw):   # "أخصائي توظيف": the ad-wording filter took the role's own word
+            rw = tokens(job.get("title") or "")
     roles = [(r, tokens(r)) for r in d["roles"]] if d["announce"] else []
     hit = (d["category"], rw if not d["announce"] else [], [(r, t) for r, t in roles if t])
     with _job_lock:
