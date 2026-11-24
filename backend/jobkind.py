@@ -17,7 +17,7 @@ import threading
 
 from . import normalize
 
-VERSION = 4     # stored "category_v": a job read by older rules is read again
+VERSION = 5     # stored "category_v": a job read by older rules is read again
 
 CATEGORIES = {   # key -> (bot button, section title)
     "coop": ("🎓 التدريب التعاوني", "التدريب التعاوني لطلاب الجامعات"),
@@ -101,6 +101,7 @@ class _Org:
 _ORG = _Org()
 _CUT = {"في", "لدي", "بشركه", "بشركة", "بمجموعه", "بهييه", "ببنك", "بوزاره", "بمستشفي", "بجامعه", "at", "with",
         "لصالح", "داخل", "بقطاع", "في شركه"}
+_ROLE_AFTER = {"لوظايف", "لوظيفه", "بمسمي", "بوظيفه", "بوظايف", "لشغل", "وظيفه:", "position:"}
 _CITY_WORDS = None
 _lock = threading.Lock()
 
@@ -138,6 +139,11 @@ def role_words(title, company=""):
     """The title's own role words (employer, city and ad wording removed), in order."""
     words = _WORD.findall(normalize.norm(title))
     comp = _company_words(company)
+    # "... في شركة X لوظائف مدخل بيانات" / "... بمسمى مساعد إداري": the role named after these words
+    for i, w in enumerate(words):
+        if w in _ROLE_AFTER and i + 1 < len(words):
+            words = words[i + 1:]
+            break
     # cut the tail that names the employer: "... لدى شركة X", "... في الشركة الوطنية ...", "... at Aramco"
     for i, w in enumerate(words):
         if i and (w in _CUT or w.startswith(("لدي", "لدى"))):
