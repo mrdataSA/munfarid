@@ -17,7 +17,7 @@ import threading
 
 from . import normalize
 
-VERSION = 5     # stored "category_v": a job read by older rules is read again
+VERSION = 6     # stored "category_v": a job read by older rules is read again
 
 CATEGORIES = {   # key -> (bot button, section title)
     "coop": ("🎓 التدريب التعاوني", "التدريب التعاوني لطلاب الجامعات"),
@@ -176,10 +176,11 @@ def is_announcement(title, company=""):
 # ---------------------------------------------------------------- roles listed in the text
 
 _HEAD_ROLES = re.compile(r"(?:ال)?(?:وظايف|وظيفه|الشواغر|شواغر|المسميات|مسميات|الوظايف المتاحه|التخصصات المطلوبه|"
-                         r"التخصصات|الفرص|الشواغر الوظيفيه)\b|positions|vacancies|open roles|job titles|roles")
+                         r"التخصصات|الفرص|الشواغر الوظيفيه|المسمي الوظيفي|مسمي الوظيفه)\b|positions|vacancies|open roles|"
+                         r"job titles?|roles")
 _HEAD_STOP = re.compile(r"شروط|الشروط|المتطلبات|متطلبات|المؤهلات|مؤهلات|المزايا|مميزات|المهام|مهام|طريقه التقديم|"
                         r"التقديم|للتقديم|رابط|موعد|requirements|qualifications|benefits|responsibilities|"
-                        r"how to apply|apply|about")
+                        r"how to apply|apply|about|الوصف|وصف الوظيفه|description|الراتب|المزايا")
 _BULLET = re.compile(r"^\s*(?:\d{1,2}\s*[-.)–:]|[-•●▪*✓✔◾▫◽◼■□➖➤►▶👈🔹🔸🔻⬅️•]+)\s*")
 _NOT_ROLE = re.compile(r"https?://|www\.|@|التقديم|رابط|الراتب|راتب|ريال|خبره|سنوات|اجاده|اللغه|مهارات|القدره|"
                        r"شهاده|ان يكون|يشترط|العمر|الجنسيه|سعودي الجنسيه|مقابله|ارسال|السيره|cv|email|salary|"
